@@ -251,9 +251,11 @@ function readLists_() {
   if (!sheet || sheet.getLastRow() < 1) return DEFAULT_LISTS;
   var grid = sheet.getDataRange().getValues();
   var out = {};
+  Object.keys(DEFAULT_LISTS).forEach(function (k) { out[k] = DEFAULT_LISTS[k]; });
   grid[0].forEach(function (key, c) {
     if (!key) return;
-    out[key] = grid.slice(1).map(function (r) { return String(r[c]).trim(); }).filter(String);
+    var values = grid.slice(1).map(function (r) { return String(r[c]).trim(); }).filter(String);
+    if (values.length) out[key] = values;
   });
   return out;
 }

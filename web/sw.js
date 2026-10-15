@@ -1,6 +1,6 @@
 // Caches the app shell so it opens offline. API calls always go to the network.
-var CACHE = 'room-log-v1';
-var SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'config.js', 'manifest.webmanifest', 'icon.svg'];
+var CACHE = 'room-log-v2';
+var SHELL = ['./', 'index.html', 'styles.css', 'config.js?v=2', 'app.js?v=2', 'manifest.webmanifest', 'icon.svg'];
 
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(SHELL); }).then(function () { return self.skipWaiting(); }));
@@ -15,8 +15,8 @@ self.addEventListener('activate', function (e) {
 self.addEventListener('fetch', function (e) {
   var url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
-  // Network first, cache fallback — staff always get the latest app when online.
-  e.respondWith(fetch(e.request).then(function (res) {
+  // Network first (revalidating past the HTTP cache), cache fallback — staff always get the latest app when online.
+  e.respondWith(fetch(e.request, { cache: 'no-cache' }).then(function (res) {
     var copy = res.clone();
     caches.open(CACHE).then(function (c) { c.put(e.request, copy); });
     return res;

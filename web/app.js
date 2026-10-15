@@ -22,7 +22,16 @@
   var $ = function (s, root) { return (root || document).querySelector(s); };
   var $$ = function (s, root) { return Array.prototype.slice.call((root || document).querySelectorAll(s)); };
   var form = $('#entryForm');
-  var state = { entries: load(LS.cache, []), lists: load(LS.lists, DEFAULT_LISTS) };
+  var state = { entries: load(LS.cache, []), lists: mergeLists(load(LS.lists, {})) };
+
+  // Sheet lists override the defaults one list at a time; a missing or empty column keeps the default.
+  function mergeLists(fromSheet) {
+    var out = Object.assign({}, DEFAULT_LISTS);
+    Object.keys(fromSheet || {}).forEach(function (k) {
+      if (Array.isArray(fromSheet[k]) && fromSheet[k].length) out[k] = fromSheet[k];
+    });
+    return out;
+  }
 
   /* ---------- storage helpers ---------- */
   function load(k, fallback) {
@@ -227,7 +236,7 @@
   function refresh() {
     setSync();
     return Promise.all([apiGet('config'), apiGet('list')]).then(function (r) {
-      if (r[0] && r[0].lists) { state.lists = r[0].lists; save(LS.lists, state.lists); applyLists(); }
+      if (r[0] && r[0].lists) { save(LS.lists, r[0].lists); state.lists = mergeLists(r[0].lists); applyLists(); }
       var queuedIds = queue().map(function (q) { return q.entry.id || q.entry.clientId; });
       var queued = state.entries.filter(function (x) { return queuedIds.indexOf(x.id) !== -1; });
       state.entries = queued.concat(r[1].entries.filter(function (x) { return queuedIds.indexOf(x.id) === -1; }));
