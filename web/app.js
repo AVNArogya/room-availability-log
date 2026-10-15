@@ -217,7 +217,7 @@
       if (isEdit) show('list');
     });
   });
-  form.addEventListener('reset', function () { setTimeout(resetForm, 0); });
+  $('#resetBtn').addEventListener('click', resetForm);
   form.elements.dateWanted.addEventListener('input', updateWait);
   form.elements.earliestDate.addEventListener('input', updateWait);
   $('#cancelEdit').addEventListener('click', function () { resetForm(); show('list'); });
