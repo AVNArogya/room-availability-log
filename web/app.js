@@ -3,8 +3,9 @@
 
   var CFG = window.APP_CONFIG || {};
   var DEMO = !CFG.API_URL;
-  var LS = { queue: 'ral.queue', cache: 'ral.entries', lists: 'ral.lists', demo: 'ral.demo', user: 'ral.enteredBy' };
+  var LS = { queue: 'ral.queue', cache: 'ral.entries', lists: 'ral.lists', rates: 'ral.rates', demo: 'ral.demo', user: 'ral.enteredBy' };
   var LOST = ['Lost', 'Went elsewhere', 'Cancelled'];
+  var BOOKED = ['Booked', 'Admitted'];
 
   var DEFAULT_LISTS = {
     newOrReturning: ['New', 'Returning'],
@@ -22,7 +23,7 @@
   var $ = function (s, root) { return (root || document).querySelector(s); };
   var $$ = function (s, root) { return Array.prototype.slice.call((root || document).querySelectorAll(s)); };
   var form = $('#entryForm');
-  var state = { entries: load(LS.cache, []), lists: mergeLists(load(LS.lists, {})) };
+  var state = { entries: load(LS.cache, []), lists: mergeLists(load(LS.lists, {})), rates: load(LS.rates, {}) };
 
   // Sheet lists override the defaults one list at a time; a missing or empty column keeps the default.
   function mergeLists(fromSheet) {
@@ -61,7 +62,7 @@
 
   /* ---------- demo backend (localStorage) ---------- */
   function demoGet(action) {
-    if (action === 'config') return { lists: DEFAULT_LISTS };
+    if (action === 'config') return { lists: DEFAULT_LISTS, rates: load(LS.rates, {}) };
     return { entries: load(LS.demo, []).slice().reverse() };
   }
   function demoPost(body) {
@@ -86,9 +87,28 @@
     if (!a || !b) return '';
     return Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
   }
+  // Mirrors revenueLoss_ in backend/Code.gs; the sheet's value is the one that counts.
+  function revenueLoss(e) {
+    var rates = state.rates || {};
+    var rateOf = function (c) { return rates[String(c || '').trim().toLowerCase()]; };
+    var stay = parseFloat(e.plannedStay) || 0;
+    var asked = rateOf(e.categoryAsked) || 0;
+    if (LOST.indexOf(e.status) !== -1) return { days: stay, amount: stay * asked };
+    var days = 0, amount = 0;
+    var delay = daysBetween(e.dateWanted, e.admissionDate);
+    if (delay > 0) { days = delay; amount += delay * asked; }
+    if (BOOKED.indexOf(e.status) !== -1) {
+      var given = rateOf(e.categoryAdmitted);
+      if (given === undefined) given = rateOf(e.offeredInstead);
+      if (given !== undefined && given < asked) amount += (asked - given) * stay;
+    }
+    return { days: days, amount: amount };
+  }
   function computeDerived(e) {
     e.waitDays = daysBetween(e.dateWanted, e.earliestDate);
-    e.patientDaysLost = LOST.indexOf(e.status) !== -1 ? (parseFloat(e.plannedStay) || 0) : 0;
+    var loss = revenueLoss(e);
+    e.patientDaysLost = loss.days;
+    e.revenueLost = loss.amount;
     e.month = e.enquiryDate ? new Date(e.enquiryDate + 'T00:00:00')
       .toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }) : '';
     return e;
@@ -160,11 +180,13 @@
     $('#saveBtn').textContent = 'Save entry';
     $('#cancelEdit').hidden = true;
     $$('.invalid', form).forEach(function (el) { el.classList.remove('invalid'); });
-    updateWait();
+    updateCalc();
   }
   function readForm() {
     var e = {};
     $$('input[name], select[name], textarea[name]', form).forEach(function (el) { e[el.name] = el.value.trim(); });
+    var digits = e.phone.replace(/\D/g, '');
+    e.phone = digits ? $('#countryCode').value + ' ' + digits : '';
     return e;
   }
   function fillForm(e) {
@@ -174,22 +196,43 @@
       if (el.type === 'date') v = v.slice(0, 10);
       if (el.tagName === 'SELECT') setSelect(el, v); else el.value = v;
     });
+    // Stored as "+91 9876543210"; older rows may have no code, which means India.
+    var m = String(e.phone || '').match(/^(\+\d{1,4})\s*(.*)$/);
+    var code = m && $$('#countryCode option').some(function (o) { return o.value === m[1]; }) ? m[1] : '+91';
+    $('#countryCode').value = code;
+    form.elements.phone.value = (m && code === m[1] ? m[2] : String(e.phone || '')).replace(/\D/g, '');
     $('#formTitle').textContent = 'Edit: ' + (e.patientName || 'entry');
     $('#saveBtn').textContent = 'Update entry';
     $('#cancelEdit').hidden = false;
-    updateWait();
+    updateCalc();
   }
-  function updateWait() {
-    var w = daysBetween(form.elements.dateWanted.value, form.elements.earliestDate.value);
+  function updateCalc() {
+    var e = readForm();
+    var w = daysBetween(e.dateWanted, e.earliestDate);
     $('#waitOut').textContent = w === '' ? '—' : w + (w === 1 ? ' day' : ' days');
+    var loss = revenueLoss(e);
+    $('#daysLostOut').textContent = loss.days;
+    $('#revenueOut').textContent = '₹' + loss.amount.toLocaleString('en-IN');
+    // UHID is only mandatory for returning patients; new patients aren't registered yet.
+    var returning = /^return/i.test(e.newOrReturning);
+    form.elements.uhid.required = returning;
+    $('#uhidReq').hidden = !returning;
+    $('#uhidHint').hidden = returning;
   }
   function validate() {
     var bad = $$('[required]', form).filter(function (el) { return !el.value.trim(); });
     $$('.invalid', form).forEach(function (el) { el.classList.remove('invalid'); });
     bad.forEach(function (el) { el.classList.add('invalid'); });
-    var phone = form.elements.phone.value.replace(/[\s-]/g, '');
-    if (phone && !/^\+?\d{7,15}$/.test(phone)) { form.elements.phone.classList.add('invalid'); bad.push(form.elements.phone); }
-    if (bad.length) { bad[0].focus(); toast('Please fill the highlighted fields'); }
+    var phoneEl = form.elements.phone;
+    var phone = phoneEl.value.replace(/[\s-]/g, '');
+    var india = $('#countryCode').value === '+91';
+    var phoneMsg = '';
+    if (phone && india && !/^[6-9]\d{9}$/.test(phone)) phoneMsg = 'Indian mobile number must be 10 digits';
+    else if (phone && !india && !/^\d{5,14}$/.test(phone)) phoneMsg = 'Phone number should be 5 to 14 digits';
+    if (phoneMsg) { phoneEl.classList.add('invalid'); if (bad.indexOf(phoneEl) === -1) bad.push(phoneEl); }
+    var stay = form.elements.plannedStay;
+    if (stay.value && !(Number(stay.value) >= 1)) { stay.classList.add('invalid'); bad.push(stay); }
+    if (bad.length) { bad[0].focus(); toast(phoneMsg && bad[0] === phoneEl ? phoneMsg : 'Please fill the highlighted fields'); }
     return !bad.length;
   }
 
@@ -218,8 +261,8 @@
     });
   });
   $('#resetBtn').addEventListener('click', resetForm);
-  form.elements.dateWanted.addEventListener('input', updateWait);
-  form.elements.earliestDate.addEventListener('input', updateWait);
+  form.addEventListener('input', updateCalc);
+  form.addEventListener('change', updateCalc);
   $('#cancelEdit').addEventListener('click', function () { resetForm(); show('list'); });
 
   /* ---------- list ---------- */
@@ -237,6 +280,7 @@
     setSync();
     return Promise.all([apiGet('config'), apiGet('list')]).then(function (r) {
       if (r[0] && r[0].lists) { save(LS.lists, r[0].lists); state.lists = mergeLists(r[0].lists); applyLists(); }
+      if (r[0] && r[0].rates) { state.rates = r[0].rates; save(LS.rates, state.rates); updateCalc(); }
       var queuedIds = queue().map(function (q) { return q.entry.id || q.entry.clientId; });
       var queued = state.entries.filter(function (x) { return queuedIds.indexOf(x.id) !== -1; });
       state.entries = queued.concat(r[1].entries.filter(function (x) { return queuedIds.indexOf(x.id) === -1; }));

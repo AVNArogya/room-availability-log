@@ -106,6 +106,9 @@ legend { font-weight: 600; padding: 0 6px; color: var(--accent); }
 .grid .wide { grid-column: 1 / -1; }
 label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); min-width: 0; }
 .req { color: var(--bad); }
+.phone-row { display: flex; gap: 6px; }
+.phone-row select { flex: 0 0 auto; width: auto; padding-right: 4px; }
+.phone-row input { flex: 1; min-width: 0; }
 input, select, textarea {
   font: inherit; font-size: 16px; color: var(--text); background: var(--surface);
   border: 1px solid var(--line); border-radius: 8px; padding: 10px 11px; width: 100%; min-height: 44px;

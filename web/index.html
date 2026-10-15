@@ -52,24 +52,53 @@
           <div class="grid">
             <label><span>Enquiry date <b class="req">*</b></span><input type="date" name="enquiryDate" required></label>
             <label><span>Patient name <b class="req">*</b></span><input name="patientName" required placeholder="Full name"></label>
-            <label>Phone<input name="phone" type="tel" inputmode="tel" placeholder="10-digit mobile"></label>
-            <label>UHID (if registered)<input name="uhid" placeholder="If registered" autocapitalize="characters"></label>
-            <label>New / returning<select name="newOrReturning" data-list="newOrReturning"></select></label>
-            <label>City / district<input name="city"></label>
-            <label>Source<input name="source" list="dl-source"></label>
-            <label>Condition<input name="condition" placeholder="e.g. Disc bulge"></label>
-            <label>Advising doctor<input name="doctor" list="dl-doctor"></label>
+            <label><span>Phone <b class="req">*</b></span>
+              <span class="phone-row">
+                <select id="countryCode" aria-label="Country code">
+                  <option value="+91">🇮🇳 +91</option>
+                  <option value="+1">🇺🇸 +1</option>
+                  <option value="+44">🇬🇧 +44</option>
+                  <option value="+971">🇦🇪 +971</option>
+                  <option value="+966">🇸🇦 +966</option>
+                  <option value="+974">🇶🇦 +974</option>
+                  <option value="+965">🇰🇼 +965</option>
+                  <option value="+968">🇴🇲 +968</option>
+                  <option value="+973">🇧🇭 +973</option>
+                  <option value="+65">🇸🇬 +65</option>
+                  <option value="+60">🇲🇾 +60</option>
+                  <option value="+61">🇦🇺 +61</option>
+                  <option value="+64">🇳🇿 +64</option>
+                  <option value="+94">🇱🇰 +94</option>
+                  <option value="+977">🇳🇵 +977</option>
+                  <option value="+880">🇧🇩 +880</option>
+                  <option value="+49">🇩🇪 +49</option>
+                  <option value="+33">🇫🇷 +33</option>
+                  <option value="+39">🇮🇹 +39</option>
+                  <option value="+31">🇳🇱 +31</option>
+                  <option value="+41">🇨🇭 +41</option>
+                  <option value="+7">🇷🇺 +7</option>
+                  <option value="+27">🇿🇦 +27</option>
+                </select>
+                <input name="phone" type="tel" inputmode="numeric" placeholder="10-digit mobile" required>
+              </span>
+            </label>
+            <label><span>UHID <span id="uhidHint">(if registered)</span> <b class="req" id="uhidReq" hidden>*</b></span><input name="uhid" placeholder="Required for returning patients" autocapitalize="characters"></label>
+            <label><span>New / returning <b class="req">*</b></span><select name="newOrReturning" data-list="newOrReturning" required></select></label>
+            <label><span>City / district <b class="req">*</b></span><input name="city" required></label>
+            <label><span>Source <b class="req">*</b></span><input name="source" list="dl-source" required></label>
+            <label><span>Condition <b class="req">*</b></span><input name="condition" placeholder="e.g. Disc bulge" required></label>
+            <label><span>Advising doctor <b class="req">*</b></span><input name="doctor" list="dl-doctor" required></label>
           </div>
         </fieldset>
 
         <fieldset>
           <legend>Room request</legend>
           <div class="grid">
-            <label>Planned stay (days)<input name="plannedStay" type="number" min="0" inputmode="numeric"></label>
+            <label><span>Planned stay (days) <b class="req">*</b></span><input name="plannedStay" type="number" min="1" inputmode="numeric" required></label>
             <label><span>Room category asked for <b class="req">*</b></span><select name="categoryAsked" data-list="roomCategory" required></select></label>
             <label><span>Date patient wanted <b class="req">*</b></span><input type="date" name="dateWanted" required></label>
-            <label>Offered instead<input name="offeredInstead" list="dl-offeredInstead"></label>
-            <label>Earliest date we could give<input type="date" name="earliestDate"></label>
+            <label><span>Offered instead <b class="req">*</b></span><input name="offeredInstead" list="dl-offeredInstead" required></label>
+            <label><span>Earliest date we could give <b class="req">*</b></span><input type="date" name="earliestDate" required></label>
             <label class="calc">Wait (days)<output id="waitOut">—</output></label>
           </div>
         </fieldset>
@@ -83,6 +112,8 @@
             <label>Reason not admitted<input name="reasonNotAdmitted" list="dl-reasonNotAdmitted"></label>
             <label>Where they went (if known)<input name="wentWhere"></label>
             <label>Last follow-up<input type="date" name="lastFollowUp"></label>
+            <label class="calc">Patient-days lost<output id="daysLostOut">0</output></label>
+            <label class="calc">Revenue lost (₹)<output id="revenueOut">₹0</output></label>
             <label class="wide">Remarks<textarea name="remarks" rows="2"></textarea></label>
             <label><span>Entered by <b class="req">*</b></span><input name="enteredBy" list="dl-enteredBy" required></label>
           </div>
@@ -117,7 +148,7 @@
   <datalist id="dl-reasonNotAdmitted"></datalist>
   <datalist id="dl-enteredBy"></datalist>
 
-  <script src="config.js?v=3"></script>
-  <script src="app.js?v=3"></script>
+  <script src="config.js?v=4"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>

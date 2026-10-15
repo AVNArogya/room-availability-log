@@ -46,8 +46,10 @@ var FIELDS = [
 var ID_KEY = 'entryId';
 var DATE_FIELDS = ['enquiryDate', 'dateWanted', 'earliestDate', 'admissionDate', 'lastFollowUp'];
 var CALCULATED = ['waitDays', 'patientDaysLost', 'revenueLost', 'month'];
-// Statuses that count as a lost admission for patient-days / revenue lost.
+// Statuses that count as a lost admission: the whole planned stay is lost.
 var LOST_STATUSES = ['Lost', 'Went elsewhere', 'Cancelled'];
+// Statuses where a cheaper room than the one asked for counts as revenue lost.
+var BOOKED_STATUSES = ['Booked', 'Admitted'];
 
 var DEFAULT_LISTS = {
   newOrReturning: ['New', 'Returning'],
@@ -106,7 +108,7 @@ function doGet(e) {
   return handle_(function () {
     checkKey_(e.parameter.key);
     var action = e.parameter.action || 'config';
-    if (action === 'config') return { lists: readLists_() };
+    if (action === 'config') return { lists: readLists_(), rates: readRates_() };
     if (action === 'list') return withLock_(function () { return { entries: listEntries_(Number(e.parameter.limit) || 200) }; });
     throw new Error('Unknown action: ' + action);
   });
@@ -209,15 +211,38 @@ function computed_(e) {
   var earliest = toDate_(e.earliestDate);
   e.waitDays = (wanted && earliest) ? Math.round((earliest - wanted) / 86400000) : '';
 
-  var stay = parseFloat(e.plannedStay) || 0;
-  var lost = LOST_STATUSES.indexOf(e.status) !== -1;
-  e.patientDaysLost = lost ? stay : 0;
-  var rate = readRates_()[String(e.categoryAsked || '').trim().toLowerCase()] || 0;
-  e.revenueLost = e.patientDaysLost * rate;
+  var loss = revenueLoss_(e, readRates_());
+  e.patientDaysLost = loss.days;
+  e.revenueLost = loss.amount;
 
   var enq = toDate_(e.enquiryDate);
   e.month = enq ? Utilities.formatDate(enq, Session.getScriptTimeZone(), 'MMM yyyy') : '';
   return e;
+}
+
+// Revenue lost rules (web/app.js revenueLoss mirrors this for the on-screen estimate):
+//   Lost / Went elsewhere / Cancelled: planned stay × rate of the category asked for.
+//   Otherwise, admitted later than wanted: delay days × rate of the category asked for.
+//   Booked / Admitted in a cheaper room: (rate asked − rate given) × planned stay.
+//     The room given is "Category admitted to", or "Offered instead" when that is blank.
+function revenueLoss_(e, rates) {
+  var rateOf = function (c) { return rates[String(c || '').trim().toLowerCase()]; };
+  var stay = parseFloat(e.plannedStay) || 0;
+  var asked = rateOf(e.categoryAsked) || 0;
+  if (LOST_STATUSES.indexOf(e.status) !== -1) return { days: stay, amount: stay * asked };
+
+  var days = 0, amount = 0;
+  var wanted = toDate_(e.dateWanted), admitted = toDate_(e.admissionDate);
+  if (wanted && admitted && admitted > wanted) {
+    days = Math.round((admitted - wanted) / 86400000);
+    amount += days * asked;
+  }
+  if (BOOKED_STATUSES.indexOf(e.status) !== -1) {
+    var given = rateOf(e.categoryAdmitted);
+    if (given === undefined) given = rateOf(e.offeredInstead);
+    if (given !== undefined && given < asked) amount += (asked - given) * stay;
+  }
+  return { days: days, amount: amount };
 }
 
 function entryToRow_(e) {

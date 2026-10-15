@@ -42,11 +42,11 @@ To run it locally: `npx http-server web -p 8080`, then open http://localhost:808
 | Column | Rule |
 |---|---|
 | Wait (days) | Earliest date we could give − Date patient wanted |
-| Patient-days lost | Planned stay, if Status is *Lost*, *Went elsewhere* or *Cancelled*; otherwise 0 |
-| Revenue lost (₹) | Patient-days lost × the rate for the category asked for (from the Rates tab) |
+| Patient-days lost | Lost / Went elsewhere / Cancelled: the planned stay. Otherwise: days between Date patient wanted and Admission date, if admitted later |
+| Revenue lost (₹) | **Lost / Went elsewhere / Cancelled:** planned stay × rate of the category asked for.<br>**Admitted later than wanted:** delay days × rate of the category asked for.<br>**Booked / Admitted in a cheaper room:** (rate asked − rate given) × planned stay. The room given is "Category admitted to", or "Offered instead" if that is blank.<br>The delay and cheaper-room amounts add up when both apply. |
 | Month | Month of the enquiry date, for example "Oct 2026" |
 
-The lost-status list is `LOST_STATUSES` in `Code.gs`, with a matching `LOST` in `app.js`.
+The status lists are `LOST_STATUSES` and `BOOKED_STATUSES` in `Code.gs`, with matching `LOST` and `BOOKED` in `app.js`. Phone numbers are saved with the country code, for example `+91 9876543210`. Every field in the first two sections is mandatory. UHID is mandatory only for returning patients.
 
 ## Using the app
 
