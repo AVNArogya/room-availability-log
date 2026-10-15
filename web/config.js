@@ -1,0 +1,6 @@
+// Fill these in after deploying backend/Code.gs as a web app.
+// Leave API_URL empty to run in demo mode (entries saved only in this browser).
+window.APP_CONFIG = {
+  API_URL: '',   // e.g. 'https://script.google.com/macros/s/AKfy.../exec'
+  APP_KEY: ''    // same value as the APP_KEY script property
+};

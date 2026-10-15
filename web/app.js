@@ -1,0 +1,348 @@
+(function () {
+  'use strict';
+
+  var CFG = window.APP_CONFIG || {};
+  var DEMO = !CFG.API_URL;
+  var LS = { queue: 'ral.queue', cache: 'ral.entries', lists: 'ral.lists', demo: 'ral.demo', user: 'ral.enteredBy' };
+  var LOST = ['Lost', 'Went elsewhere', 'Cancelled'];
+
+  var DEFAULT_LISTS = {
+    newOrReturning: ['New', 'Returning'],
+    source: ['Incoming call - Google', 'Incoming call - Website', 'Direct counseling', 'Zoho Bookings',
+             'Website', 'Google Ad words', 'Referral', 'Walk-in'],
+    doctor: ['Dr. Geethu', 'Dr. Sridevi', 'Dr. Chippi', 'Dr. Biju', 'Dr. Ramesh', 'Dr. Padmavathy', 'Dr. Jyothish'],
+    roomCategory: ['Economy', 'Executive AC', 'Classic Villa'],
+    offeredInstead: ['Nothing available', 'Economy', 'Executive AC', 'Classic Villa', 'Outside stay (hotel)'],
+    status: ['Waiting', 'No answer', 'Booked', 'Admitted', 'Postponed', 'Lost', 'Went elsewhere', 'Cancelled'],
+    reasonNotAdmitted: ['Room not available', 'Waiting time too long', 'Cost', 'Postponed by patient',
+                        'Went elsewhere', 'Not reachable', 'Other'],
+    enteredBy: []
+  };
+
+  var $ = function (s, root) { return (root || document).querySelector(s); };
+  var $$ = function (s, root) { return Array.prototype.slice.call((root || document).querySelectorAll(s)); };
+  var form = $('#entryForm');
+  var state = { entries: load(LS.cache, []), lists: load(LS.lists, DEFAULT_LISTS) };
+
+  /* ---------- storage helpers ---------- */
+  function load(k, fallback) {
+    try { var v = JSON.parse(localStorage.getItem(k)); return v == null ? fallback : v; } catch (e) { return fallback; }
+  }
+  function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage unavailable */ } }
+
+  /* ---------- API ---------- */
+  function apiGet(action) {
+    if (DEMO) return Promise.resolve(demoGet(action));
+    var url = CFG.API_URL + '?action=' + action + '&key=' + encodeURIComponent(CFG.APP_KEY || '');
+    return fetch(url).then(unwrap);
+  }
+  function apiPost(body) {
+    if (DEMO) return Promise.resolve(demoPost(body));
+    body.key = CFG.APP_KEY || '';
+    // text/plain keeps this a "simple" request so Apps Script doesn't need CORS preflight.
+    return fetch(CFG.API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) })
+      .then(unwrap);
+  }
+  function unwrap(res) {
+    return res.json().then(function (j) {
+      if (!j.ok) { var err = new Error(j.error || 'Server error'); err.fatal = true; throw err; }
+      return j.data;
+    });
+  }
+
+  /* ---------- demo backend (localStorage) ---------- */
+  function demoGet(action) {
+    if (action === 'config') return { lists: DEFAULT_LISTS };
+    return { entries: load(LS.demo, []).slice().reverse() };
+  }
+  function demoPost(body) {
+    var rows = load(LS.demo, []);
+    var e = Object.assign({}, body.entry);
+    var now = new Date().toISOString();
+    if (body.action === 'add') {
+      var dup = rows.filter(function (r) { return r.id === e.clientId; })[0];
+      if (dup) return { entry: dup };
+      e.id = e.clientId; e.createdAt = now;
+    }
+    e.updatedAt = now;
+    e = computeDerived(e);
+    if (body.action === 'add') rows.push(e);
+    else rows = rows.map(function (r) { return r.id === e.id ? Object.assign(r, e) : r; });
+    save(LS.demo, rows);
+    return { entry: e };
+  }
+
+  /* ---------- derived fields (mirrors backend) ---------- */
+  function daysBetween(a, b) {
+    if (!a || !b) return '';
+    return Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
+  }
+  function computeDerived(e) {
+    e.waitDays = daysBetween(e.dateWanted, e.earliestDate);
+    e.patientDaysLost = LOST.indexOf(e.status) !== -1 ? (parseFloat(e.plannedStay) || 0) : 0;
+    e.month = e.enquiryDate ? new Date(e.enquiryDate + 'T00:00:00')
+      .toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }) : '';
+    return e;
+  }
+
+  /* ---------- offline queue ---------- */
+  function queue() { return load(LS.queue, []); }
+  function enqueue(item) { var q = queue(); q.push(item); save(LS.queue, q); renderPending(); }
+
+  var flushing = false;
+  function flush() {
+    if (flushing || !navigator.onLine) return Promise.resolve();
+    var q = queue();
+    if (!q.length) return Promise.resolve();
+    flushing = true;
+    var item = q[0];
+    return apiPost(item).then(function (data) {
+      save(LS.queue, queue().slice(1));
+      upsertLocal(data.entry);
+      flushing = false;
+      return flush();
+    }, function (err) {
+      flushing = false;
+      if (err.fatal) { // server rejected it: drop it so it doesn't block the queue
+        save(LS.queue, queue().slice(1));
+        toast('Could not save ' + (item.entry.patientName || 'entry') + ': ' + err.message);
+        return flush();
+      }
+    }).then(renderPending);
+  }
+
+  /* ---------- lists / dropdowns ---------- */
+  function applyLists() {
+    var L = state.lists;
+    $$('select[data-list]').forEach(function (sel) {
+      var cur = sel.value;
+      var opts = (L[sel.dataset.list] || []).slice();
+      var html = '<option value="">' + (sel.required ? 'Select…' : '—') + '</option>';
+      html += opts.map(function (o) { return '<option>' + esc(o) + '</option>'; }).join('');
+      sel.innerHTML = html;
+      if (cur) setSelect(sel, cur);
+    });
+    ['source', 'doctor', 'offeredInstead', 'reasonNotAdmitted', 'enteredBy'].forEach(function (k) {
+      $('#dl-' + k).innerHTML = (L[k] || []).map(function (o) { return '<option value="' + esc(o) + '">'; }).join('');
+    });
+    $('#statusFilter').innerHTML = '<option value="">All statuses</option>' +
+      (L.status || []).map(function (o) { return '<option>' + esc(o) + '</option>'; }).join('');
+  }
+  // Keep values that aren't in the list (e.g. older free-text data) selectable.
+  function setSelect(sel, value) {
+    if (value && !$$('option', sel).some(function (o) { return o.value === value; })) {
+      var o = document.createElement('option'); o.textContent = value; sel.appendChild(o);
+    }
+    sel.value = value || '';
+  }
+
+  /* ---------- form ---------- */
+  function today() {
+    var d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().slice(0, 10);
+  }
+  function resetForm() {
+    form.reset();
+    form.elements.id.value = '';
+    form.elements.enquiryDate.value = today();
+    form.elements.status.value = 'Waiting';
+    form.elements.enteredBy.value = load(LS.user, '');
+    $('#formTitle').textContent = 'New entry';
+    $('#saveBtn').textContent = 'Save entry';
+    $('#cancelEdit').hidden = true;
+    $$('.invalid', form).forEach(function (el) { el.classList.remove('invalid'); });
+    updateWait();
+  }
+  function readForm() {
+    var e = {};
+    $$('input[name], select[name], textarea[name]', form).forEach(function (el) { e[el.name] = el.value.trim(); });
+    return e;
+  }
+  function fillForm(e) {
+    resetForm();
+    $$('input[name], select[name], textarea[name]', form).forEach(function (el) {
+      var v = e[el.name] == null ? '' : String(e[el.name]);
+      if (el.type === 'date') v = v.slice(0, 10);
+      if (el.tagName === 'SELECT') setSelect(el, v); else el.value = v;
+    });
+    $('#formTitle').textContent = 'Edit: ' + (e.patientName || 'entry');
+    $('#saveBtn').textContent = 'Update entry';
+    $('#cancelEdit').hidden = false;
+    updateWait();
+  }
+  function updateWait() {
+    var w = daysBetween(form.elements.dateWanted.value, form.elements.earliestDate.value);
+    $('#waitOut').textContent = w === '' ? '—' : w + (w === 1 ? ' day' : ' days');
+  }
+  function validate() {
+    var bad = $$('[required]', form).filter(function (el) { return !el.value.trim(); });
+    $$('.invalid', form).forEach(function (el) { el.classList.remove('invalid'); });
+    bad.forEach(function (el) { el.classList.add('invalid'); });
+    var phone = form.elements.phone.value.replace(/[\s-]/g, '');
+    if (phone && !/^\+?\d{7,15}$/.test(phone)) { form.elements.phone.classList.add('invalid'); bad.push(form.elements.phone); }
+    if (bad.length) { bad[0].focus(); toast('Please fill the highlighted fields'); }
+    return !bad.length;
+  }
+
+  form.addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    if (!validate()) return;
+    var e = readForm();
+    save(LS.user, e.enteredBy);
+    var isEdit = !!e.id;
+    if (!isEdit) { e.clientId = uid(); delete e.id; }
+    var item = { action: isEdit ? 'update' : 'add', entry: e };
+
+    // Optimistic local copy so the list shows it immediately, even offline.
+    var local = computeDerived(Object.assign({}, e, { id: e.id || e.clientId, _queued: true }));
+    upsertLocal(local);
+    enqueue(item);
+
+    var btn = $('#saveBtn'); btn.disabled = true;
+    flush().then(function () {
+      btn.disabled = false;
+      var key = e.clientId || e.id;
+      var stillQueued = queue().some(function (q) { return (q.entry.clientId || q.entry.id) === key; });
+      toast(stillQueued ? 'Saved offline — will sync when online' : (isEdit ? 'Entry updated' : DEMO ? 'Entry saved (demo)' : 'Entry saved to Google Sheet'));
+      resetForm();
+      if (isEdit) show('list');
+    });
+  });
+  form.addEventListener('reset', function () { setTimeout(resetForm, 0); });
+  form.elements.dateWanted.addEventListener('input', updateWait);
+  form.elements.earliestDate.addEventListener('input', updateWait);
+  $('#cancelEdit').addEventListener('click', function () { resetForm(); show('list'); });
+
+  /* ---------- list ---------- */
+  function upsertLocal(entry) {
+    var found = false;
+    state.entries = state.entries.map(function (x) {
+      if (x.id === entry.id) { found = true; return entry; }
+      return x;
+    });
+    if (!found) state.entries.unshift(entry);
+    save(LS.cache, state.entries);
+    renderList();
+  }
+  function refresh() {
+    setSync();
+    return Promise.all([apiGet('config'), apiGet('list')]).then(function (r) {
+      if (r[0] && r[0].lists) { state.lists = r[0].lists; save(LS.lists, state.lists); applyLists(); }
+      var queuedIds = queue().map(function (q) { return q.entry.id || q.entry.clientId; });
+      var queued = state.entries.filter(function (x) { return queuedIds.indexOf(x.id) !== -1; });
+      state.entries = queued.concat(r[1].entries.filter(function (x) { return queuedIds.indexOf(x.id) === -1; }));
+      save(LS.cache, state.entries);
+      renderList();
+    }).catch(function (err) {
+      toast(err.fatal ? err.message : 'Offline — showing saved entries');
+    });
+  }
+  function renderList() {
+    var q = $('#search').value.trim().toLowerCase();
+    var st = $('#statusFilter').value;
+    var rows = state.entries.filter(function (e) {
+      if (st && e.status !== st) return false;
+      if (!q) return true;
+      return [e.patientName, e.phone, e.uhid, e.city, e.condition, e.doctor, e.categoryAsked]
+        .join(' ').toLowerCase().indexOf(q) !== -1;
+    });
+    $('#entries').innerHTML = rows.map(function (e) {
+      var cls = LOST.indexOf(e.status) !== -1 ? 'lost' : (e.status === 'Waiting' ? 'waiting' : '');
+      var wait = e.waitDays === '' || e.waitDays == null ? '' : ' · wait ' + e.waitDays + 'd';
+      return '<li class="entry" data-id="' + esc(e.id) + '" tabindex="0">' +
+        '<div class="row1"><span class="name">' + esc(e.patientName) + '</span>' +
+        (e._queued ? '<span class="badge queued">Not synced</span>' : '<span class="badge ' + cls + '">' + esc(e.status || '—') + '</span>') +
+        '</div>' +
+        '<div class="meta">' + esc(e.categoryAsked || '') + ' wanted ' + fmtDate(e.dateWanted) + wait + '</div>' +
+        '<div class="meta">' + esc([e.phone, e.uhid, e.city].filter(Boolean).join(' · ')) + '</div>' +
+        '<div class="meta">Enquiry ' + fmtDate(e.enquiryDate) + (e.enteredBy ? ' · by ' + esc(e.enteredBy) : '') + '</div>' +
+        '</li>';
+    }).join('');
+    $('#empty').hidden = rows.length > 0;
+    renderStats(rows);
+  }
+  function renderStats(rows) {
+    var waiting = rows.filter(function (e) { return e.status === 'Waiting'; }).length;
+    var lost = rows.filter(function (e) { return LOST.indexOf(e.status) !== -1; }).length;
+    var waits = rows.map(function (e) { return Number(e.waitDays); }).filter(function (n) { return !isNaN(n) && n > 0; });
+    var avg = waits.length ? (waits.reduce(function (a, b) { return a + b; }, 0) / waits.length).toFixed(1) : '—';
+    var daysLost = rows.reduce(function (a, e) { return a + (Number(e.patientDaysLost) || 0); }, 0);
+    $('#stats').innerHTML = [
+      [rows.length, 'Entries'], [waiting, 'Waiting'], [lost, 'Lost'], [avg, 'Avg wait (days)'], [daysLost, 'Patient-days lost']
+    ].map(function (s) { return '<div class="stat"><b>' + s[0] + '</b><span>' + s[1] + '</span></div>'; }).join('');
+  }
+  function renderPending() {
+    var n = queue().length;
+    var el = $('#pending');
+    el.hidden = !n;
+    el.textContent = n + ' entr' + (n === 1 ? 'y' : 'ies') + ' waiting to sync to Google Sheet.';
+    setSync();
+  }
+  function openEntry(id) {
+    var e = state.entries.filter(function (x) { return x.id === id; })[0];
+    if (!e) return;
+    fillForm(e);
+    show('form');
+    window.scrollTo(0, 0);
+  }
+  $('#entries').addEventListener('click', function (ev) {
+    var li = ev.target.closest('.entry'); if (li) openEntry(li.dataset.id);
+  });
+  $('#entries').addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter' && ev.target.classList.contains('entry')) openEntry(ev.target.dataset.id);
+  });
+  $('#search').addEventListener('input', renderList);
+  $('#statusFilter').addEventListener('change', renderList);
+  $('#refreshBtn').addEventListener('click', function () { flush().then(refresh); });
+
+  /* ---------- navigation & status ---------- */
+  function show(view) {
+    $$('.view').forEach(function (v) { v.classList.toggle('active', v.id === 'view-' + view); });
+    $$('.tabs button').forEach(function (b) { b.classList.toggle('active', b.dataset.view === view); });
+    if (view === 'list') renderList();
+  }
+  $$('.tabs button').forEach(function (b) { b.addEventListener('click', function () { show(b.dataset.view); }); });
+
+  function setSync() {
+    var el = $('#sync');
+    var online = navigator.onLine;
+    var n = queue().length;
+    el.className = 'sync ' + (online ? 'online' : 'offline');
+    $('#syncText').textContent = DEMO ? 'Demo' : !online ? 'Offline' : n ? n + ' pending' : 'Synced';
+  }
+  window.addEventListener('online', function () { flush().then(refresh); });
+  window.addEventListener('offline', setSync);
+
+  var toastTimer;
+  function toast(msg) {
+    var t = $('#toast'); t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastTimer); toastTimer = setTimeout(function () { t.classList.remove('show'); }, 3000);
+  }
+
+  /* ---------- utils ---------- */
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function fmtDate(s) {
+    if (!s) return '—';
+    var d = new Date(String(s).slice(0, 10) + 'T00:00:00');
+    return isNaN(d) ? esc(s) : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+  function uid() {
+    return (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
+  }
+
+  /* ---------- boot ---------- */
+  $('#demoBanner').hidden = !DEMO;
+  applyLists();
+  resetForm();
+  renderList();
+  renderPending();
+  flush().then(refresh);
+
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    navigator.serviceWorker.register('sw.js').catch(function () {});
+  }
+})();

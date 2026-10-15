@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f6b5c">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Room Log">
+  <title>Room Availability Log</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="icon.svg" alt="" width="28" height="28">
+      <div>
+        <h1>Room Availability Log</h1>
+        <p class="sub">One row per patient who couldn't get the room asked for</p>
+      </div>
+    </div>
+    <div class="sync" id="sync" title="Sync status"><span class="dot"></span><span id="syncText">…</span></div>
+  </header>
+
+  <div class="banner" id="demoBanner" hidden>
+    Demo mode — entries are saved only in this browser. Set <code>API_URL</code> in <code>config.js</code> to write to Google Sheets.
+  </div>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-view="form" class="active" id="tabForm">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>New entry</span>
+    </button>
+    <button role="tab" data-view="list" id="tabList">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span>Entries</span>
+    </button>
+  </nav>
+
+  <main>
+    <!-- ENTRY FORM -->
+    <section id="view-form" class="view active">
+      <form id="entryForm" novalidate autocomplete="off">
+        <input type="hidden" name="id">
+        <div class="form-head">
+          <h2 id="formTitle">New entry</h2>
+          <button type="button" class="link" id="cancelEdit" hidden>Cancel edit</button>
+        </div>
+
+        <fieldset>
+          <legend>Enquiry &amp; patient</legend>
+          <div class="grid">
+            <label><span>Enquiry date <b class="req">*</b></span><input type="date" name="enquiryDate" required></label>
+            <label><span>Patient name <b class="req">*</b></span><input name="patientName" required placeholder="Full name"></label>
+            <label>Phone<input name="phone" type="tel" inputmode="tel" placeholder="10-digit mobile"></label>
+            <label>UHID (if registered)<input name="uhid" placeholder="If registered" autocapitalize="characters"></label>
+            <label>New / returning<select name="newOrReturning" data-list="newOrReturning"></select></label>
+            <label>City / district<input name="city"></label>
+            <label>Source<input name="source" list="dl-source"></label>
+            <label>Condition<input name="condition" placeholder="e.g. Disc bulge"></label>
+            <label>Advising doctor<input name="doctor" list="dl-doctor"></label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Room request</legend>
+          <div class="grid">
+            <label>Planned stay (days)<input name="plannedStay" type="number" min="0" inputmode="numeric"></label>
+            <label><span>Room category asked for <b class="req">*</b></span><select name="categoryAsked" data-list="roomCategory" required></select></label>
+            <label><span>Date patient wanted <b class="req">*</b></span><input type="date" name="dateWanted" required></label>
+            <label>Offered instead<input name="offeredInstead" list="dl-offeredInstead"></label>
+            <label>Earliest date we could give<input type="date" name="earliestDate"></label>
+            <label class="calc">Wait (days)<output id="waitOut">—</output></label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Outcome</legend>
+          <div class="grid">
+            <label>Status<select name="status" data-list="status"></select></label>
+            <label>Admission date<input type="date" name="admissionDate"></label>
+            <label>Category admitted to<select name="categoryAdmitted" data-list="roomCategory" data-blank="1"></select></label>
+            <label>Reason not admitted<input name="reasonNotAdmitted" list="dl-reasonNotAdmitted"></label>
+            <label>Where they went (if known)<input name="wentWhere"></label>
+            <label>Last follow-up<input type="date" name="lastFollowUp"></label>
+            <label class="wide">Remarks<textarea name="remarks" rows="2"></textarea></label>
+            <label><span>Entered by <b class="req">*</b></span><input name="enteredBy" list="dl-enteredBy" required></label>
+          </div>
+        </fieldset>
+
+        <div class="actions">
+          <button type="reset" class="secondary" id="resetBtn">Clear</button>
+          <button type="submit" class="primary" id="saveBtn">Save entry</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- ENTRIES LIST -->
+    <section id="view-list" class="view">
+      <div class="list-tools">
+        <input type="search" id="search" placeholder="Search name, phone, UHID, city…">
+        <select id="statusFilter"><option value="">All statuses</option></select>
+        <button class="secondary" id="refreshBtn" type="button">Refresh</button>
+      </div>
+      <div class="stats" id="stats"></div>
+      <div id="pending" class="pending" hidden></div>
+      <ul class="entries" id="entries"></ul>
+      <p class="empty" id="empty" hidden>No entries yet.</p>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <datalist id="dl-source"></datalist>
+  <datalist id="dl-doctor"></datalist>
+  <datalist id="dl-offeredInstead"></datalist>
+  <datalist id="dl-reasonNotAdmitted"></datalist>
+  <datalist id="dl-enteredBy"></datalist>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
