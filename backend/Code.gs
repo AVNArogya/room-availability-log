@@ -13,8 +13,11 @@ var LOG_SHEET = 'Room availability log';
 var LISTS_SHEET = 'Lists';
 var RATES_SHEET = 'Rates';
 
-// Same 26 columns as the Excel log. Each row's Entry ID is stored as hidden row
-// metadata (not a column), so it moves with the row when the sheet is sorted.
+// Columns are matched by their header text in row 1, so columns can be added, moved
+// or removed in the sheet without breaking the app. Matching ignores case, spaces,
+// punctuation and anything in brackets ("UHID (if registered)" matches "UHID").
+// Each row's Entry ID is stored as hidden row metadata, not in a column.
+// [key, header used when creating a new sheet, other accepted headers...]
 var FIELDS = [
   ['enquiryDate', 'Enquiry date'],
   ['patientName', 'Patient name'],
@@ -27,6 +30,7 @@ var FIELDS = [
   ['doctor', 'Advising doctor'],
   ['plannedStay', 'Planned stay (days)'],
   ['categoryAsked', 'Room category asked for'],
+  ['offeredRoom', 'Offerred Room', 'Offered Room', 'Room offered'],
   ['dateWanted', 'Date patient wanted'],
   ['offeredInstead', 'Offered instead'],
   ['earliestDate', 'Earliest date we could give'],
@@ -41,11 +45,14 @@ var FIELDS = [
   ['enteredBy', 'Entered by'],
   ['patientDaysLost', 'Patient-days lost'],
   ['revenueLost', 'Revenue lost (₹)'],
-  ['month', 'Month']
+  ['month', 'Month'],
+  ['updatedAt', 'Updated at']
 ];
+// Header row for a brand-new sheet. "Month" is still filled in if you add that column.
+var DEFAULT_HEADER = FIELDS.map(function (f) { return f[0]; }).filter(function (k) { return k !== 'month'; });
 var ID_KEY = 'entryId';
 var DATE_FIELDS = ['enquiryDate', 'dateWanted', 'earliestDate', 'admissionDate', 'lastFollowUp'];
-var CALCULATED = ['waitDays', 'patientDaysLost', 'revenueLost', 'month'];
+var CALCULATED = ['waitDays', 'patientDaysLost', 'revenueLost', 'month', 'updatedAt'];
 // Statuses that count as a lost admission: the whole planned stay is lost.
 var LOST_STATUSES = ['Lost', 'Went elsewhere', 'Cancelled'];
 // Statuses where a cheaper room than the one asked for counts as revenue lost.
@@ -57,6 +64,7 @@ var DEFAULT_LISTS = {
            'Website', 'Google Ad words', 'Referral', 'Walk-in'],
   doctor: ['Dr. Geethu', 'Dr. Sridevi', 'Dr. Chippi', 'Dr. Biju', 'Dr. Ramesh', 'Dr. Padmavathy', 'Dr. Jyothish'],
   roomCategory: ['Economy', 'Executive AC', 'Classic Villa'],
+  offeredRoom: ['Economy', 'Executive AC', 'Classic Villa', 'Not offered'],
   offeredInstead: ['Nothing available', 'Economy', 'Executive AC', 'Classic Villa', 'Outside stay (hotel)'],
   status: ['Waiting', 'No answer', 'Booked', 'Admitted', 'Postponed', 'Lost', 'Went elsewhere', 'Cancelled'],
   reasonNotAdmitted: ['Room not available', 'Waiting time too long', 'Cost', 'Postponed by patient',
@@ -70,11 +78,12 @@ function setup() {
   var ss = SpreadsheetApp.getActive();
   var log = ss.getSheetByName(LOG_SHEET) || ss.insertSheet(LOG_SHEET, 0);
   if (log.getLastRow() === 0) {
-    log.appendRow(FIELDS.map(function (f) { return f[1]; }));
-    log.getRange(1, 1, 1, FIELDS.length).setFontWeight('bold').setBackground('#e8eef7');
+    log.appendRow(DEFAULT_HEADER.map(function (k) { return fieldOf_(k)[1]; }));
+    log.getRange(1, 1, 1, DEFAULT_HEADER.length).setFontWeight('bold').setBackground('#e8eef7');
     log.setFrozenRows(1);
-    var calcCols = CALCULATED.map(colOf);
-    calcCols.forEach(function (c) { log.getRange(1, c).setBackground('#d9d9d9'); });
+    DEFAULT_HEADER.forEach(function (k, i) {
+      if (CALCULATED.indexOf(k) !== -1) log.getRange(1, i + 1).setBackground('#d9d9d9');
+    });
   }
 
   var lists = ss.getSheetByName(LISTS_SHEET);
@@ -164,12 +173,17 @@ function addEntry_(entry) {
     if (existing) return readEntry_(log, existing, entry.clientId);
   }
   var id = entry.clientId || Utilities.getUuid();
-  var row = entryToRow_(computed_(entry));
+  var cols = columns_(log);
+  var e = computed_(entry);
+  e.updatedAt = new Date();
+  var row = [];
+  for (var c = 0; c < cols.width; c++) row.push('');
+  fillRow_(row, cols, e);
   log.appendRow(row);
   var r = log.getLastRow();
   tagRow_(log, r, id);
-  formatRow_(log, r);
-  return rowToEntry_(row, id);
+  formatRow_(log, r, cols);
+  return readEntry_(log, r, id);
 }
 
 function updateEntry_(entry) {
@@ -177,31 +191,40 @@ function updateEntry_(entry) {
   var log = logSheet_();
   var r = findRow_(log, entry.id);
   if (!r) throw new Error('Entry not found: ' + entry.id);
-  var current = readEntry_(log, r, entry.id);
+  var cols = columns_(log);
+  var range = log.getRange(r, 1, 1, cols.width);
+  var row = range.getValues()[0];
+  var formulas = range.getFormulas()[0];
+  var current = rowToEntry_(row, cols, entry.id);
   FIELDS.forEach(function (f) {
     var k = f[0];
     if (CALCULATED.indexOf(k) === -1 && entry.hasOwnProperty(k)) current[k] = entry[k];
   });
-  var row = entryToRow_(computed_(current));
-  log.getRange(r, 1, 1, FIELDS.length).setValues([row]);
-  formatRow_(log, r);
-  return rowToEntry_(row, entry.id);
+  var e = computed_(current);
+  e.updatedAt = new Date();
+  // Keep formulas in columns the app doesn't manage.
+  formulas.forEach(function (f, i) { if (f) row[i] = f; });
+  fillRow_(row, cols, e);
+  range.setValues([row]);
+  formatRow_(log, r, cols);
+  return readEntry_(log, r, entry.id);
 }
 
 function listEntries_(limit) {
   var log = logSheet_();
   var last = log.getLastRow();
   if (last < 2) return [];
+  var cols = columns_(log);
   var start = Math.max(2, last - limit + 1);
-  var values = log.getRange(start, 1, last - start + 1, FIELDS.length).getValues();
+  var values = log.getRange(start, 1, last - start + 1, cols.width).getValues();
   var ids = rowIds_(log);
   var out = [];
   values.forEach(function (row, i) {
     var r = start + i;
-    if (!row[colOf('patientName') - 1]) return;
+    if (!row[cols.patientName - 1]) return;
     // Rows typed or pasted straight into the sheet get an ID so the app can edit them too.
     if (!ids[r]) { ids[r] = Utilities.getUuid(); tagRow_(log, r, ids[r]); }
-    out.push(rowToEntry_(row, ids[r]));
+    out.push(rowToEntry_(row, cols, ids[r]));
   });
   return out.reverse();
 }
@@ -224,7 +247,7 @@ function computed_(e) {
 //   Lost / Went elsewhere / Cancelled: planned stay × rate of the category asked for.
 //   Otherwise, admitted later than wanted: delay days × rate of the category asked for.
 //   Booked / Admitted in a cheaper room: (rate asked − rate given) × planned stay.
-//     The room given is "Category admitted to", or "Offered instead" when that is blank.
+//     The room given is "Category admitted to", or "Offerred Room" when that is blank.
 function revenueLoss_(e, rates) {
   var rateOf = function (c) { return rates[String(c || '').trim().toLowerCase()]; };
   var stay = parseFloat(e.plannedStay) || 0;
@@ -239,58 +262,92 @@ function revenueLoss_(e, rates) {
   }
   if (BOOKED_STATUSES.indexOf(e.status) !== -1) {
     var given = rateOf(e.categoryAdmitted);
-    if (given === undefined) given = rateOf(e.offeredInstead);
+    if (given === undefined) given = rateOf(e.offeredRoom);
     if (given !== undefined && given < asked) amount += (asked - given) * stay;
   }
   return { days: days, amount: amount };
 }
 
-function entryToRow_(e) {
-  return FIELDS.map(function (f) {
-    var k = f[0], v = e[k];
-    if (v === undefined || v === null) return '';
-    if (DATE_FIELDS.indexOf(k) !== -1) return toDate_(v) || '';
-    return v;
+/* ---------- columns ---------- */
+
+function normHeader_(h) {
+  return String(h || '').replace(/\([^)]*\)/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function fieldOf_(key) {
+  for (var i = 0; i < FIELDS.length; i++) if (FIELDS[i][0] === key) return FIELDS[i];
+  throw new Error('Unknown field ' + key);
+}
+
+// { key: columnNumber, ..., width } read from the header row.
+function columns_(sheet) {
+  var width = Math.max(sheet.getLastColumn(), 1);
+  var headers = sheet.getRange(1, 1, 1, width).getValues()[0].map(normHeader_);
+  var cols = { width: width };
+  FIELDS.forEach(function (f) {
+    var names = f.slice(1).map(normHeader_);
+    for (var c = 0; c < headers.length; c++) {
+      if (headers[c] && names.indexOf(headers[c]) !== -1) { cols[f[0]] = c + 1; break; }
+    }
+  });
+  if (!cols.patientName) {
+    throw new Error('Column "Patient name" not found in row 1 of the "' + LOG_SHEET + '" tab');
+  }
+  return cols;
+}
+
+function fillRow_(row, cols, e) {
+  FIELDS.forEach(function (f) {
+    var k = f[0];
+    if (!cols[k]) return;
+    var v = e[k];
+    if (v === undefined || v === null) v = '';
+    else if (DATE_FIELDS.indexOf(k) !== -1) v = toDate_(v) || '';
+    row[cols[k] - 1] = v;
   });
 }
 
-function rowToEntry_(row, id) {
+function rowToEntry_(row, cols, id) {
   var e = { id: id };
-  FIELDS.forEach(function (f, i) {
-    var v = row[i];
+  FIELDS.forEach(function (f) {
+    var k = f[0];
+    if (!cols[k]) return;
+    var v = row[cols[k] - 1];
     if (v instanceof Date) {
-      v = Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+      v = Utilities.formatDate(v, Session.getScriptTimeZone(), k === 'updatedAt' ? "yyyy-MM-dd'T'HH:mm" : 'yyyy-MM-dd');
     }
-    e[f[0]] = v;
+    e[k] = v;
   });
   return e;
 }
 
-function formatRow_(sheet, r) {
-  DATE_FIELDS.forEach(function (k) { sheet.getRange(r, colOf(k)).setNumberFormat('dd-mmm-yyyy'); });
-  sheet.getRange(r, colOf('phone')).setNumberFormat('@');
-  sheet.getRange(r, colOf('revenueLost')).setNumberFormat('₹#,##0');
+function formatRow_(sheet, r, cols) {
+  var fmt = function (k, f) { if (cols[k]) sheet.getRange(r, cols[k]).setNumberFormat(f); };
+  DATE_FIELDS.forEach(function (k) { fmt(k, 'dd-mmm-yyyy'); });
+  fmt('phone', '@');
+  fmt('revenueLost', '₹#,##0');
+  fmt('updatedAt', 'dd-mmm-yyyy hh:mm');
 }
 
 function readEntry_(sheet, r, id) {
-  return rowToEntry_(sheet.getRange(r, 1, 1, FIELDS.length).getValues()[0], id);
+  var cols = columns_(sheet);
+  return rowToEntry_(sheet.getRange(r, 1, 1, cols.width).getValues()[0], cols, id);
 }
+
+/* ---------- row IDs ---------- */
 
 function tagRow_(sheet, r, id) {
   sheet.getRange(r + ':' + r).addDeveloperMetadata(ID_KEY, id);
 }
 
-function rowMetadata_(sheet) {
-  return sheet.createDeveloperMetadataFinder()
-    .withKey(ID_KEY)
-    .withLocationType(SpreadsheetApp.DeveloperMetadataLocationType.ROW)
-    .find();
-}
-
 // { rowNumber: entryId } for every tagged row.
 function rowIds_(sheet) {
   var out = {};
-  rowMetadata_(sheet).forEach(function (m) { out[m.getLocation().getRow().getRow()] = m.getValue(); });
+  sheet.createDeveloperMetadataFinder()
+    .withKey(ID_KEY)
+    .withLocationType(SpreadsheetApp.DeveloperMetadataLocationType.ROW)
+    .find()
+    .forEach(function (m) { out[m.getLocation().getRow().getRow()] = m.getValue(); });
   return out;
 }
 
@@ -299,22 +356,42 @@ function findRow_(sheet, id) {
   return found.length ? found[0].getLocation().getRow().getRow() : 0;
 }
 
-// Earlier versions wrote Entry ID / Created at / Updated at into columns AA:AC.
-// Move those IDs into row metadata and clear the three columns.
+// Earlier versions wrote Entry ID / Created at / Updated at into three columns at the end.
+// Move those IDs into row metadata and clear the old values. Only columns whose header is
+// blank, "Entry ID" or "Created at" are touched, and this runs once per spreadsheet.
 function migrateIdColumns_(sheet) {
-  var last = sheet.getLastRow();
-  if (sheet.getMaxColumns() <= FIELDS.length || last < 1) return;
-  var extra = sheet.getRange(1, FIELDS.length + 1, last, 3).getValues();
-  var uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  var hasOldIds = extra[0][0] === 'Entry ID' || extra.some(function (r) { return uuid.test(String(r[0])); });
-  if (!hasOldIds) return;
-  var tagged = rowIds_(sheet);
-  for (var i = 1; i < extra.length; i++) {
-    var r = i + 1, id = String(extra[i][0]);
-    if (uuid.test(id) && !tagged[r]) tagRow_(sheet, r, id);
+  var props = PropertiesService.getDocumentProperties();
+  if (props.getProperty('idColumnsMigrated') === '2') return;
+  var last = sheet.getLastRow(), width = sheet.getLastColumn();
+  if (last >= 2 && width >= 1) {
+    var data = sheet.getRange(1, 1, last, width).getValues();
+    var head = data[0].map(normHeader_);
+    var uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    var spare = function (c) { return c < width && ['', 'entryid', 'createdat'].indexOf(head[c]) !== -1; };
+    var tagged = null;
+    for (var c = 0; c < width; c++) {
+      if (!spare(c)) continue;
+      var hasIds = data.some(function (row, i) { return i > 0 && uuid.test(String(row[c])); });
+      if (!hasIds && head[c] !== 'createdat') continue;
+      if (hasIds) {
+        tagged = tagged || rowIds_(sheet);
+        for (var i = 1; i < data.length; i++) {
+          var id = String(data[i][c]);
+          if (uuid.test(id) && !tagged[i + 1]) { tagRow_(sheet, i + 1, id); tagged[i + 1] = id; }
+        }
+        // The old timestamps sat in the blank-headed columns right after the ID.
+        for (var n = c + 1; n <= c + 2 && n < width && head[n] === ''; n++) {
+          sheet.getRange(2, n + 1, last - 1, 1).clear();
+        }
+      }
+      sheet.getRange(2, c + 1, last - 1, 1).clear();
+      if (head[c]) sheet.getRange(1, c + 1).clear();
+    }
   }
-  sheet.getRange(1, FIELDS.length + 1, last, 3).clear();
+  props.setProperty('idColumnsMigrated', '2');
 }
+
+/* ---------- Lists & Rates ---------- */
 
 function readLists_() {
   var sheet = SpreadsheetApp.getActive().getSheetByName(LISTS_SHEET);
@@ -327,6 +404,11 @@ function readLists_() {
     var values = grid.slice(1).map(function (r) { return String(r[c]).trim(); }).filter(String);
     if (values.length) out[key] = values;
   });
+  // Without its own column in Lists, "Offerred Room" offers the room categories.
+  var hasOfferedRoom = grid[0].some(function (key, c) {
+    return key === 'offeredRoom' && grid.slice(1).some(function (r) { return String(r[c]).trim(); });
+  });
+  if (!hasOfferedRoom) out.offeredRoom = out.roomCategory.concat(['Not offered']);
   return out;
 }
 
@@ -345,11 +427,6 @@ function logSheet_() {
   if (!sheet) { setup(); sheet = SpreadsheetApp.getActive().getSheetByName(LOG_SHEET); }
   migrateIdColumns_(sheet);
   return sheet;
-}
-
-function colOf(key) {
-  for (var i = 0; i < FIELDS.length; i++) if (FIELDS[i][0] === key) return i + 1;
-  throw new Error('No column for ' + key);
 }
 
 function toDate_(v) {

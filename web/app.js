@@ -31,6 +31,9 @@
     Object.keys(fromSheet || {}).forEach(function (k) {
       if (Array.isArray(fromSheet[k]) && fromSheet[k].length) out[k] = fromSheet[k];
     });
+    if (!(fromSheet && fromSheet.offeredRoom && fromSheet.offeredRoom.length)) {
+      out.offeredRoom = out.roomCategory.concat(['Not offered']);
+    }
     return out;
   }
 
@@ -99,7 +102,7 @@
     if (delay > 0) { days = delay; amount += delay * asked; }
     if (BOOKED.indexOf(e.status) !== -1) {
       var given = rateOf(e.categoryAdmitted);
-      if (given === undefined) given = rateOf(e.offeredInstead);
+      if (given === undefined) given = rateOf(e.offeredRoom);
       if (given !== undefined && given < asked) amount += (asked - given) * stay;
     }
     return { days: days, amount: amount };
