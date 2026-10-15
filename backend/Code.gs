@@ -13,7 +13,8 @@ var LOG_SHEET = 'Room availability log';
 var LISTS_SHEET = 'Lists';
 var RATES_SHEET = 'Rates';
 
-// Same columns as the Excel log, plus bookkeeping columns at the end.
+// Same 26 columns as the Excel log. Each row's Entry ID is stored as hidden row
+// metadata (not a column), so it moves with the row when the sheet is sorted.
 var FIELDS = [
   ['enquiryDate', 'Enquiry date'],
   ['patientName', 'Patient name'],
@@ -40,13 +41,11 @@ var FIELDS = [
   ['enteredBy', 'Entered by'],
   ['patientDaysLost', 'Patient-days lost'],
   ['revenueLost', 'Revenue lost (₹)'],
-  ['month', 'Month'],
-  ['id', 'Entry ID'],
-  ['createdAt', 'Created at'],
-  ['updatedAt', 'Updated at']
+  ['month', 'Month']
 ];
+var ID_KEY = 'entryId';
 var DATE_FIELDS = ['enquiryDate', 'dateWanted', 'earliestDate', 'admissionDate', 'lastFollowUp'];
-var CALCULATED = ['waitDays', 'patientDaysLost', 'revenueLost', 'month', 'id', 'createdAt', 'updatedAt'];
+var CALCULATED = ['waitDays', 'patientDaysLost', 'revenueLost', 'month'];
 // Statuses that count as a lost admission for patient-days / revenue lost.
 var LOST_STATUSES = ['Lost', 'Went elsewhere', 'Cancelled'];
 
@@ -108,7 +107,7 @@ function doGet(e) {
     checkKey_(e.parameter.key);
     var action = e.parameter.action || 'config';
     if (action === 'config') return { lists: readLists_() };
-    if (action === 'list') return { entries: listEntries_(Number(e.parameter.limit) || 200) };
+    if (action === 'list') return withLock_(function () { return { entries: listEntries_(Number(e.parameter.limit) || 200) }; });
     throw new Error('Unknown action: ' + action);
   });
 }
@@ -118,16 +117,23 @@ function doPost(e) {
   return handle_(function () {
     var body = JSON.parse(e.postData.contents || '{}');
     checkKey_(body.key);
-    var lock = LockService.getScriptLock();
-    lock.waitLock(20000);
-    try {
+    return withLock_(function () {
       if (body.action === 'add') return { entry: addEntry_(body.entry) };
       if (body.action === 'update') return { entry: updateEntry_(body.entry) };
       throw new Error('Unknown action: ' + body.action);
-    } finally {
-      lock.releaseLock();
-    }
+    });
   });
+}
+
+// Listing can tag untagged rows with IDs, so reads and writes share one lock.
+function withLock_(fn) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    return fn();
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function handle_(fn) {
@@ -153,16 +159,15 @@ function addEntry_(entry) {
   // clientId makes retries from the offline queue idempotent.
   if (entry.clientId) {
     var existing = findRow_(log, entry.clientId);
-    if (existing) return rowToEntry_(log.getRange(existing, 1, 1, FIELDS.length).getValues()[0]);
+    if (existing) return readEntry_(log, existing, entry.clientId);
   }
-  var now = new Date();
-  entry.id = entry.clientId || Utilities.getUuid();
-  entry.createdAt = now;
-  entry.updatedAt = now;
+  var id = entry.clientId || Utilities.getUuid();
   var row = entryToRow_(computed_(entry));
   log.appendRow(row);
-  formatRow_(log, log.getLastRow());
-  return rowToEntry_(row);
+  var r = log.getLastRow();
+  tagRow_(log, r, id);
+  formatRow_(log, r);
+  return rowToEntry_(row, id);
 }
 
 function updateEntry_(entry) {
@@ -170,16 +175,15 @@ function updateEntry_(entry) {
   var log = logSheet_();
   var r = findRow_(log, entry.id);
   if (!r) throw new Error('Entry not found: ' + entry.id);
-  var current = rowToEntry_(log.getRange(r, 1, 1, FIELDS.length).getValues()[0]);
+  var current = readEntry_(log, r, entry.id);
   FIELDS.forEach(function (f) {
     var k = f[0];
     if (CALCULATED.indexOf(k) === -1 && entry.hasOwnProperty(k)) current[k] = entry[k];
   });
-  current.updatedAt = new Date();
   var row = entryToRow_(computed_(current));
   log.getRange(r, 1, 1, FIELDS.length).setValues([row]);
   formatRow_(log, r);
-  return rowToEntry_(row);
+  return rowToEntry_(row, entry.id);
 }
 
 function listEntries_(limit) {
@@ -188,7 +192,16 @@ function listEntries_(limit) {
   if (last < 2) return [];
   var start = Math.max(2, last - limit + 1);
   var values = log.getRange(start, 1, last - start + 1, FIELDS.length).getValues();
-  return values.map(rowToEntry_).filter(function (e) { return e.id; }).reverse();
+  var ids = rowIds_(log);
+  var out = [];
+  values.forEach(function (row, i) {
+    var r = start + i;
+    if (!row[colOf('patientName') - 1]) return;
+    // Rows typed or pasted straight into the sheet get an ID so the app can edit them too.
+    if (!ids[r]) { ids[r] = Utilities.getUuid(); tagRow_(log, r, ids[r]); }
+    out.push(rowToEntry_(row, ids[r]));
+  });
+  return out.reverse();
 }
 
 function computed_(e) {
@@ -216,14 +229,12 @@ function entryToRow_(e) {
   });
 }
 
-function rowToEntry_(row) {
-  var e = {};
+function rowToEntry_(row, id) {
+  var e = { id: id };
   FIELDS.forEach(function (f, i) {
     var v = row[i];
     if (v instanceof Date) {
-      v = DATE_FIELDS.indexOf(f[0]) !== -1
-        ? Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd')
-        : v.toISOString();
+      v = Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
     }
     e[f[0]] = v;
   });
@@ -236,14 +247,48 @@ function formatRow_(sheet, r) {
   sheet.getRange(r, colOf('revenueLost')).setNumberFormat('₹#,##0');
 }
 
+function readEntry_(sheet, r, id) {
+  return rowToEntry_(sheet.getRange(r, 1, 1, FIELDS.length).getValues()[0], id);
+}
+
+function tagRow_(sheet, r, id) {
+  sheet.getRange(r + ':' + r).addDeveloperMetadata(ID_KEY, id);
+}
+
+function rowMetadata_(sheet) {
+  return sheet.createDeveloperMetadataFinder()
+    .withKey(ID_KEY)
+    .withLocationType(SpreadsheetApp.DeveloperMetadataLocationType.ROW)
+    .find();
+}
+
+// { rowNumber: entryId } for every tagged row.
+function rowIds_(sheet) {
+  var out = {};
+  rowMetadata_(sheet).forEach(function (m) { out[m.getLocation().getRow().getRow()] = m.getValue(); });
+  return out;
+}
+
 function findRow_(sheet, id) {
+  var found = sheet.createDeveloperMetadataFinder().withKey(ID_KEY).withValue(id).find();
+  return found.length ? found[0].getLocation().getRow().getRow() : 0;
+}
+
+// Earlier versions wrote Entry ID / Created at / Updated at into columns AA:AC.
+// Move those IDs into row metadata and clear the three columns.
+function migrateIdColumns_(sheet) {
   var last = sheet.getLastRow();
-  if (last < 2) return 0;
-  var ids = sheet.getRange(2, colOf('id'), last - 1, 1).getValues();
-  for (var i = ids.length - 1; i >= 0; i--) {
-    if (ids[i][0] === id) return i + 2;
+  if (sheet.getMaxColumns() <= FIELDS.length || last < 1) return;
+  var extra = sheet.getRange(1, FIELDS.length + 1, last, 3).getValues();
+  var uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  var hasOldIds = extra[0][0] === 'Entry ID' || extra.some(function (r) { return uuid.test(String(r[0])); });
+  if (!hasOldIds) return;
+  var tagged = rowIds_(sheet);
+  for (var i = 1; i < extra.length; i++) {
+    var r = i + 1, id = String(extra[i][0]);
+    if (uuid.test(id) && !tagged[r]) tagRow_(sheet, r, id);
   }
-  return 0;
+  sheet.getRange(1, FIELDS.length + 1, last, 3).clear();
 }
 
 function readLists_() {
@@ -273,6 +318,7 @@ function readRates_() {
 function logSheet_() {
   var sheet = SpreadsheetApp.getActive().getSheetByName(LOG_SHEET);
   if (!sheet) { setup(); sheet = SpreadsheetApp.getActive().getSheetByName(LOG_SHEET); }
+  migrateIdColumns_(sheet);
   return sheet;
 }
 

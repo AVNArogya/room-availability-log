@@ -10,7 +10,7 @@ Staff record one entry per patient who couldn't get the room category they asked
 1. Create a new Google Sheet, for example "Room availability log".
 2. Open **Extensions → Apps Script**, delete the sample code and paste in `backend/Code.gs`. Save.
 3. Choose `setup` in the function dropdown and click **Run**, then approve the permissions. This creates three tabs:
-   - **Room availability log**: has the same 26 columns as the Excel file, plus Entry ID, Created at and Updated at.
+   - **Room availability log**: has the same 26 columns as the Excel file and nothing more. Each row's ID is stored as hidden row metadata, so it never shows in the sheet.
    - **Lists**: the dropdown options (sources, doctors, room categories, statuses, staff). Edit this tab to change the options in the app.
    - **Rates**: the per-day rate for each room category. "Revenue lost (₹)" is calculated from it, so **enter the real rates here.**
 4. Open **Project Settings → Script properties → Add property**: `APP_KEY` = a secret phrase of your choice.
