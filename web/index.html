@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0f6b5c">
+  <meta name="theme-color" content="#1f5fae">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Room Log">
   <title>Room Availability Log</title>
@@ -136,7 +136,18 @@
       </div>
       <div class="stats" id="stats"></div>
       <div id="pending" class="pending" hidden></div>
-      <ul class="entries" id="entries"></ul>
+      <div class="table-wrap">
+        <table class="entries">
+          <thead>
+            <tr>
+              <th>Patient</th><th>Enquiry</th><th>Phone</th><th>Room asked</th><th>Offered room</th>
+              <th>Wanted</th><th class="num">Wait</th><th>Status</th><th class="num">Days lost</th>
+              <th class="num">Revenue lost</th><th>Entered by</th>
+            </tr>
+          </thead>
+          <tbody id="entries"></tbody>
+        </table>
+      </div>
       <p class="empty" id="empty" hidden>No entries yet.</p>
     </section>
   </main>
@@ -148,7 +159,7 @@
   <datalist id="dl-reasonNotAdmitted"></datalist>
   <datalist id="dl-enteredBy"></datalist>
 
-  <script src="config.js?v=8"></script>
-  <script src="app.js?v=8"></script>
+  <script src="config.js?v=9"></script>
+  <script src="app.js?v=9"></script>
 </body>
 </html>

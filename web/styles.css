@@ -1,13 +1,13 @@
 :root {
-  --bg: #f4f6f5;
+  --bg: #f3f5f9;
   --surface: #ffffff;
-  --text: #1c2523;
-  --muted: #5f6b68;
-  --line: #dde3e1;
-  --accent: #0f6b5c;
+  --text: #1a2233;
+  --muted: #5b6578;
+  --line: #dce1ea;
+  --accent: #1f5fae;
   --accent-ink: #ffffff;
-  --accent-soft: #e3f1ee;
-  --calc: #eef0ef;
+  --accent-soft: #e6eefa;
+  --calc: #eef1f6;
   --warn: #a35a00;
   --warn-soft: #fff4e2;
   --bad: #b3261e;
@@ -17,15 +17,15 @@
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #111615;
-    --surface: #1a201f;
-    --text: #e6ecea;
-    --muted: #9aa7a3;
-    --line: #2c3533;
-    --accent: #3fb59e;
-    --accent-ink: #06201b;
-    --accent-soft: #173029;
-    --calc: #232a28;
+    --bg: #0f141c;
+    --surface: #171e29;
+    --text: #e6ebf3;
+    --muted: #98a3b5;
+    --line: #2a3342;
+    --accent: #7fb0ff;
+    --accent-ink: #0a1a33;
+    --accent-soft: #1a2a44;
+    --calc: #212a38;
     --warn: #f0b35a;
     --warn-soft: #2d2414;
     --bad: #f2867f;
@@ -144,16 +144,27 @@ button.link { background: none; border: 0; color: var(--accent); font: inherit; 
 .stat span { font-size: 12px; color: var(--muted); }
 .pending { background: var(--warn-soft); color: var(--warn); border-radius: var(--radius); padding: 8px 12px; margin-bottom: 12px; font-size: 13px; }
 
-.entries { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-@media (min-width: 760px) { .entries { grid-template-columns: 1fr 1fr; } }
-.entry {
+/* The table scrolls sideways inside its box on small screens; the page itself never does. */
+.table-wrap {
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
-  padding: 12px; cursor: pointer; display: grid; gap: 4px;
+  overflow: auto; max-height: 70vh; -webkit-overflow-scrolling: touch;
 }
-.entry:hover { border-color: var(--accent); }
-.entry .row1 { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
-.entry .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.entry .meta { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.entries { width: 100%; border-collapse: collapse; font-size: 14px; }
+.entries th, .entries td { padding: 9px 12px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--line); }
+.entries thead th {
+  position: sticky; top: 0; z-index: 1; background: var(--accent-soft); color: var(--accent);
+  font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em;
+}
+.entries th.num, .entries td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.entries tbody tr { cursor: pointer; }
+.entries tbody tr:hover, .entries tbody tr:focus { background: var(--accent-soft); outline: none; }
+.entries tbody tr:last-child td { border-bottom: 0; }
+.entries .name { font-weight: 600; }
+.entries .muted { color: var(--muted); }
+/* Keep the patient name visible while scrolling sideways. */
+.entries th:first-child, .entries td:first-child { position: sticky; left: 0; background: var(--surface); }
+.entries thead th:first-child { background: var(--accent-soft); z-index: 2; }
+.entries tbody tr:hover td:first-child { background: var(--accent-soft); }
 .badge { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
 .badge.lost { background: color-mix(in srgb, var(--bad) 15%, transparent); color: var(--bad); }
 .badge.waiting { background: var(--warn-soft); color: var(--warn); }

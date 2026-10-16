@@ -1,6 +1,6 @@
 // Caches the app shell so it opens offline. API calls always go to the network.
-var CACHE = 'room-log-v8';
-var SHELL = ['./', 'index.html', 'styles.css', 'config.js?v=8', 'app.js?v=8', 'manifest.webmanifest', 'icon.svg'];
+var CACHE = 'room-log-v9';
+var SHELL = ['./', 'index.html', 'styles.css', 'config.js?v=9', 'app.js?v=9', 'manifest.webmanifest', 'icon.svg'];
 
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(SHELL); }).then(function () { return self.skipWaiting(); }));

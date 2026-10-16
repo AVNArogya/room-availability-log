@@ -345,6 +345,8 @@ function formatRow_(sheet, r, cols) {
   var fmt = function (k, f) { if (cols[k]) sheet.getRange(r, cols[k]).setNumberFormat(f); };
   DATE_FIELDS.forEach(function (k) { fmt(k, 'dd-mmm-yyyy'); });
   fmt('phone', '@');
+  fmt('waitDays', '0');
+  fmt('patientDaysLost', '0');
   fmt('revenueLost', '₹#,##0');
   fmt('updatedAt', 'dd-mmm-yyyy hh:mm');
 }
@@ -411,6 +413,21 @@ function migrateIdColumns_(sheet) {
   props.setProperty('idColumnsMigrated', '2');
 }
 
+// An earlier version applied the ₹ format by column position, which landed on
+// "Patient-days lost" once a column was inserted. Reset day columns to plain numbers, once.
+function fixDayFormats_(sheet) {
+  var props = PropertiesService.getDocumentProperties();
+  if (props.getProperty('dayFormatsFixed') === '1') return;
+  var last = sheet.getLastRow();
+  if (last >= 2) {
+    var cols = columns_(sheet);
+    ['waitDays', 'patientDaysLost'].forEach(function (k) {
+      if (cols[k]) sheet.getRange(2, cols[k], last - 1, 1).setNumberFormat('0');
+    });
+  }
+  props.setProperty('dayFormatsFixed', '1');
+}
+
 /* ---------- Lists & Rates ---------- */
 
 function readLists_() {
@@ -449,6 +466,7 @@ function logSheet_() {
   if (!sheet) { setup(); sheet = SpreadsheetApp.getActive().getSheetByName(LOG_SHEET); }
   migrateIdColumns_(sheet);
   repairPhoneCells_(sheet);
+  fixDayFormats_(sheet);
   return sheet;
 }
 

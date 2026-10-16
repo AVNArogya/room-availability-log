@@ -317,17 +317,23 @@
       return [e.patientName, e.phone, e.uhid, e.city, e.condition, e.doctor, e.categoryAsked]
         .join(' ').toLowerCase().indexOf(q) !== -1;
     });
+    var num = function (v) { return v === '' || v == null ? '—' : esc(v); };
     $('#entries').innerHTML = rows.map(function (e) {
       var cls = LOST.indexOf(e.status) !== -1 ? 'lost' : (e.status === 'Waiting' ? 'waiting' : '');
-      var wait = e.waitDays === '' || e.waitDays == null ? '' : ' · wait ' + e.waitDays + 'd';
-      return '<li class="entry" data-id="' + esc(e.id) + '" tabindex="0">' +
-        '<div class="row1"><span class="name">' + esc(e.patientName) + '</span>' +
-        (e._queued ? '<span class="badge queued">Not synced</span>' : '<span class="badge ' + cls + '">' + esc(e.status || '—') + '</span>') +
-        '</div>' +
-        '<div class="meta">' + esc(e.categoryAsked || '') + ' wanted ' + fmtDate(e.dateWanted) + wait + '</div>' +
-        '<div class="meta">' + esc([e.phone, e.uhid, e.city].filter(Boolean).join(' · ')) + '</div>' +
-        '<div class="meta">Enquiry ' + fmtDate(e.enquiryDate) + (e.enteredBy ? ' · by ' + esc(e.enteredBy) : '') + '</div>' +
-        '</li>';
+      var revenue = Number(e.revenueLost) ? '₹' + Number(e.revenueLost).toLocaleString('en-IN') : '—';
+      return '<tr class="entry" data-id="' + esc(e.id) + '" tabindex="0">' +
+        '<td class="name">' + esc(e.patientName) + (e.uhid ? ' <span class="muted">' + esc(e.uhid) + '</span>' : '') + '</td>' +
+        '<td>' + fmtDate(e.enquiryDate) + '</td>' +
+        '<td>' + esc(e.phone || '—') + '</td>' +
+        '<td>' + esc(e.categoryAsked || '—') + '</td>' +
+        '<td>' + esc(e.offeredRoom || '—') + '</td>' +
+        '<td>' + fmtDate(e.dateWanted) + '</td>' +
+        '<td class="num">' + num(e.waitDays) + '</td>' +
+        '<td>' + (e._queued ? '<span class="badge queued">Not synced</span>' : '<span class="badge ' + cls + '">' + esc(e.status || '—') + '</span>') + '</td>' +
+        '<td class="num">' + num(e.patientDaysLost) + '</td>' +
+        '<td class="num">' + revenue + '</td>' +
+        '<td class="muted">' + esc(e.enteredBy || '—') + '</td>' +
+        '</tr>';
     }).join('');
     $('#empty').hidden = rows.length > 0;
     renderStats(rows);
