@@ -301,7 +301,29 @@ function fillRow_(row, cols, e) {
     var v = e[k];
     if (v === undefined || v === null) v = '';
     else if (DATE_FIELDS.indexOf(k) !== -1) v = toDate_(v) || '';
+    // Sheets treats text starting with = + - @ as a formula ("+91 98…" → #ERROR!).
+    // A leading apostrophe stores it as plain text and isn't shown in the cell.
+    else if (typeof v === 'string' && /^[=+\-@]/.test(v)) v = "'" + v;
     row[cols[k] - 1] = v;
+  });
+}
+
+// Phone cells written by earlier versions as "+91 98…" became broken formulas.
+// Turn them back into text so the number shows and the app can read it.
+function repairPhoneCells_(sheet) {
+  var last = sheet.getLastRow();
+  if (last < 2) return;
+  var cols = columns_(sheet);
+  if (!cols.phone) return;
+  var range = sheet.getRange(2, cols.phone, last - 1, 1);
+  var formulas = range.getFormulas();
+  formulas.forEach(function (f, i) {
+    var text = String(f[0]).replace(/^=/, '');
+    if (/^\+[\d\s]+$/.test(text)) {
+      var cell = sheet.getRange(i + 2, cols.phone);
+      cell.setNumberFormat('@');
+      cell.setValue("'" + text);
+    }
   });
 }
 
@@ -426,6 +448,7 @@ function logSheet_() {
   var sheet = SpreadsheetApp.getActive().getSheetByName(LOG_SHEET);
   if (!sheet) { setup(); sheet = SpreadsheetApp.getActive().getSheetByName(LOG_SHEET); }
   migrateIdColumns_(sheet);
+  repairPhoneCells_(sheet);
   return sheet;
 }
 
