@@ -64,7 +64,7 @@ var DEFAULT_LISTS = {
   doctor: ['Dr. Geethu', 'Dr. Sridevi', 'Dr. Chippi', 'Dr. Biju', 'Dr. Ramesh', 'Dr. Padmavathy', 'Dr. Jyothish'],
   roomCategory: ['Economy', 'Executive AC', 'Classic Villa'],
   offeredRoom: ['Economy', 'Executive AC', 'Classic Villa', 'Not offered'],
-  status: ['Waiting', 'No answer', 'Booked', 'Admitted', 'Postponed', 'Lost', 'Went elsewhere', 'Cancelled'],
+  status: ['Waiting', 'Booked', 'Admitted', 'Lost'],
   reasonNotAdmitted: ['Room not available', 'Waiting time too long', 'Cost', 'Postponed by patient',
                       'Went elsewhere', 'Not reachable', 'Other'],
   enteredBy: []
@@ -402,6 +402,8 @@ function readLists_() {
     var values = grid.slice(1).map(function (r) { return String(r[c]).trim(); }).filter(String);
     if (values.length) out[key] = values;
   });
+  // The four statuses are fixed; a status column in the Lists tab is ignored.
+  out.status = DEFAULT_LISTS.status;
   // Without its own column in Lists, "Offerred Room" offers the room categories.
   var hasOfferedRoom = grid[0].some(function (key, c) {
     return key === 'offeredRoom' && grid.slice(1).some(function (r) { return String(r[c]).trim(); });

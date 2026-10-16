@@ -51,6 +51,7 @@ The status lists are `LOST_STATUSES` and `BOOKED_STATUSES` in `Code.gs`, with ma
 ## Using the app
 
 - **New entry**: The enquiry date defaults to today and "Entered by" remembers the last name used. Wait (days) updates as you type.
+- **Status** is fixed to Waiting, Booked, Admitted and Lost (the Lists tab can't change it). The Outcome section shows only the fields for the chosen status: Waiting shows Last follow-up and Remarks. Booked and Admitted add Admission date and Admission category, both mandatory. Lost adds Reason not admitted (mandatory) and Where they went. Fields hidden by the status are cleared when you save.
 - **Entries**: Search by name, phone, UHID or city, and filter by status. The summary tiles show waiting, lost, average wait and patient-days lost. Tap an entry to update its status, admission date or follow-up. The update overwrites the same row in the sheet.
 
 ## Note on the existing Excel data

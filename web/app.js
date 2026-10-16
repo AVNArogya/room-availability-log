@@ -13,7 +13,7 @@
              'Website', 'Google Ad words', 'Referral', 'Walk-in'],
     doctor: ['Dr. Geethu', 'Dr. Sridevi', 'Dr. Chippi', 'Dr. Biju', 'Dr. Ramesh', 'Dr. Padmavathy', 'Dr. Jyothish'],
     roomCategory: ['Economy', 'Executive AC', 'Classic Villa'],
-    status: ['Waiting', 'No answer', 'Booked', 'Admitted', 'Postponed', 'Lost', 'Went elsewhere', 'Cancelled'],
+    status: ['Waiting', 'Booked', 'Admitted', 'Lost'],
     reasonNotAdmitted: ['Room not available', 'Waiting time too long', 'Cost', 'Postponed by patient',
                         'Went elsewhere', 'Not reachable', 'Other'],
     enteredBy: []
@@ -30,6 +30,7 @@
     Object.keys(fromSheet || {}).forEach(function (k) {
       if (Array.isArray(fromSheet[k]) && fromSheet[k].length) out[k] = fromSheet[k];
     });
+    out.status = DEFAULT_LISTS.status;
     if (!(fromSheet && fromSheet.offeredRoom && fromSheet.offeredRoom.length)) {
       out.offeredRoom = out.roomCategory.concat(['Not offered']);
     }
@@ -210,6 +211,9 @@
   }
   function updateCalc() {
     var e = readForm();
+    applyStatusFields(e.status);
+    // Hidden fields are cleared on save, so leave them out of the estimate too.
+    $$('[data-show][hidden] [name]', form).forEach(function (el) { e[el.name] = ''; });
     var w = daysBetween(e.dateWanted, e.earliestDate);
     $('#waitOut').textContent = w === '' ? '—' : w + (w === 1 ? ' day' : ' days');
     var loss = revenueLoss(e);
@@ -221,8 +225,19 @@
     $('#uhidReq').hidden = !returning;
     $('#uhidHint').hidden = returning;
   }
+  // Show only the Outcome fields that belong to the chosen status (see data-show in index.html).
+  function applyStatusFields(status) {
+    var st = String(status || '').toLowerCase();
+    $$('[data-show]', form).forEach(function (label) {
+      var on = label.dataset.show.split(' ').indexOf(st) !== -1;
+      label.hidden = !on;
+      var field = $('input, select, textarea', label);
+      field.disabled = !on;
+      if (label.hasAttribute('data-require')) field.required = on;
+    });
+  }
   function validate() {
-    var bad = $$('[required]', form).filter(function (el) { return !el.value.trim(); });
+    var bad = $$('[required]:not(:disabled)', form).filter(function (el) { return !el.value.trim(); });
     $$('.invalid', form).forEach(function (el) { el.classList.remove('invalid'); });
     bad.forEach(function (el) { el.classList.add('invalid'); });
     var phoneEl = form.elements.phone;
@@ -242,6 +257,7 @@
     ev.preventDefault();
     if (!validate()) return;
     var e = readForm();
+    $$('[data-show][hidden] [name]', form).forEach(function (el) { e[el.name] = ''; });
     save(LS.user, e.enteredBy);
     var isEdit = !!e.id;
     if (!isEdit) { e.clientId = uid(); delete e.id; }
