@@ -22,7 +22,8 @@
   var $ = function (s, root) { return (root || document).querySelector(s); };
   var $$ = function (s, root) { return Array.prototype.slice.call((root || document).querySelectorAll(s)); };
   var form = $('#entryForm');
-  var state = { entries: load(LS.cache, []), lists: mergeLists(load(LS.lists, {})), rates: load(LS.rates, {}) };
+  var state = { entries: load(LS.cache, []), lists: mergeLists(load(LS.lists, {})), rates: load(LS.rates, {}), page: 1 };
+  var PAGE_SIZE = 10;
 
   // Sheet lists override the defaults one list at a time; a missing or empty column keeps the default.
   function mergeLists(fromSheet) {
@@ -44,9 +45,9 @@
   function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage unavailable */ } }
 
   /* ---------- API ---------- */
-  function apiGet(action) {
+  function apiGet(action, extra) {
     if (DEMO) return Promise.resolve(demoGet(action));
-    var url = CFG.API_URL + '?action=' + action + '&key=' + encodeURIComponent(CFG.APP_KEY || '');
+    var url = CFG.API_URL + '?action=' + action + (extra || '') + '&key=' + encodeURIComponent(CFG.APP_KEY || '');
     return fetch(url).then(unwrap);
   }
   function apiPost(body) {
@@ -296,7 +297,7 @@
   }
   function refresh() {
     setSync();
-    return Promise.all([apiGet('config'), apiGet('list')]).then(function (r) {
+    return Promise.all([apiGet('config'), apiGet('list', '&limit=5000')]).then(function (r) {
       if (r[0] && r[0].lists) { save(LS.lists, r[0].lists); state.lists = mergeLists(r[0].lists); applyLists(); }
       if (r[0] && r[0].rates) { state.rates = r[0].rates; save(LS.rates, state.rates); updateCalc(); }
       var queuedIds = queue().map(function (q) { return q.entry.id || q.entry.clientId; });
@@ -318,7 +319,10 @@
         .join(' ').toLowerCase().indexOf(q) !== -1;
     });
     var num = function (v) { return v === '' || v == null ? '—' : esc(v); };
-    $('#entries').innerHTML = rows.map(function (e) {
+    var pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+    state.page = Math.min(Math.max(1, state.page), pages);
+    var first = (state.page - 1) * PAGE_SIZE;
+    $('#entries').innerHTML = rows.slice(first, first + PAGE_SIZE).map(function (e) {
       var cls = LOST.indexOf(e.status) !== -1 ? 'lost' : (e.status === 'Waiting' ? 'waiting' : '');
       var revenue = Number(e.revenueLost) ? '₹' + Number(e.revenueLost).toLocaleString('en-IN') : '—';
       return '<tr class="entry" data-id="' + esc(e.id) + '" tabindex="0">' +
@@ -336,7 +340,34 @@
         '</tr>';
     }).join('');
     $('#empty').hidden = rows.length > 0;
+    renderPager(rows.length, pages);
     renderStats(rows);
+  }
+  // "Showing 11–20 of 57" plus Prev / page numbers / Next. Long ranges collapse to 1 … 4 5 6 … 12.
+  function renderPager(total, pages) {
+    var pager = $('#pager');
+    pager.hidden = total === 0;
+    if (!total) return;
+    var p = state.page;
+    var from = (p - 1) * PAGE_SIZE + 1, to = Math.min(p * PAGE_SIZE, total);
+    var nums = [];
+    for (var i = 1; i <= pages; i++) {
+      if (i === 1 || i === pages || Math.abs(i - p) <= 1) nums.push(i);
+      else if (nums[nums.length - 1] !== '…') nums.push('…');
+    }
+    var btn = function (label, page, opts) {
+      opts = opts || {};
+      return '<button type="button" class="pg' + (opts.current ? ' current' : '') + '" data-page="' + page + '"' +
+        (opts.disabled ? ' disabled' : '') + (opts.current ? ' aria-current="page"' : '') +
+        (opts.aria ? ' aria-label="' + opts.aria + '"' : '') + '>' + label + '</button>';
+    };
+    pager.innerHTML =
+      '<span class="pg-info">Showing ' + from + '–' + to + ' of ' + total + '</span>' +
+      '<span class="pg-buttons">' +
+      btn('‹<span class="pg-word"> Prev</span>', p - 1, { disabled: p === 1, aria: 'Previous page' }) +
+      nums.map(function (n) { return n === '…' ? '<span class="pg-gap">…</span>' : btn(n, n, { current: n === p, aria: 'Page ' + n }); }).join('') +
+      btn('<span class="pg-word">Next </span>›', p + 1, { disabled: p === pages, aria: 'Next page' }) +
+      '</span>';
   }
   function renderStats(rows) {
     var waiting = rows.filter(function (e) { return e.status === 'Waiting'; }).length;
@@ -368,8 +399,15 @@
   $('#entries').addEventListener('keydown', function (ev) {
     if (ev.key === 'Enter' && ev.target.classList.contains('entry')) openEntry(ev.target.dataset.id);
   });
-  $('#search').addEventListener('input', renderList);
-  $('#statusFilter').addEventListener('change', renderList);
+  $('#search').addEventListener('input', function () { state.page = 1; renderList(); });
+  $('#statusFilter').addEventListener('change', function () { state.page = 1; renderList(); });
+  $('#pager').addEventListener('click', function (ev) {
+    var b = ev.target.closest('button[data-page]');
+    if (!b || b.disabled) return;
+    state.page = Number(b.dataset.page);
+    renderList();
+    $('.table-wrap').scrollTop = 0;
+  });
   $('#refreshBtn').addEventListener('click', function () { flush().then(refresh); });
 
   /* ---------- navigation & status ---------- */

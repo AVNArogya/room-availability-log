@@ -171,6 +171,25 @@ button.link { background: none; border: 0; color: var(--accent); font: inherit; 
 .badge.queued { background: var(--calc); color: var(--muted); }
 .empty { color: var(--muted); text-align: center; padding: 24px; }
 
+.pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }
+.pg-info { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.pg-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.pg {
+  font: inherit; font-size: 14px; min-width: 40px; min-height: 40px; padding: 0 10px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--text); cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.pg:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.pg.current { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.pg:disabled { opacity: .45; cursor: default; }
+.pg-gap { color: var(--muted); padding: 0 4px; }
+@media (max-width: 480px) {
+  .pager { justify-content: center; }
+  .pg-info { width: 100%; text-align: center; }
+  .pg { min-width: 36px; padding: 0 8px; }
+  .pg-word { display: none; }
+}
+
 .toast {
   position: fixed; left: 50%; transform: translateX(-50%) translateY(20px);
   bottom: calc(80px + env(safe-area-inset-bottom)); background: var(--text); color: var(--bg);
