@@ -37,7 +37,7 @@ var FIELDS = [
   ['waitDays', 'Wait (days)'],
   ['status', 'Status'],
   ['admissionDate', 'Admission date'],
-  ['categoryAdmitted', 'Category admitted to'],
+  ['categoryAdmitted', 'Admission category', 'Category admitted to'],
   ['reasonNotAdmitted', 'Reason not admitted'],
   ['wentWhere', 'Where they went (if known)'],
   ['lastFollowUp', 'Last follow-up'],
@@ -247,7 +247,7 @@ function computed_(e) {
 //   Lost / Went elsewhere / Cancelled: planned stay × rate of the category asked for.
 //   Otherwise, admitted later than wanted: delay days × rate of the category asked for.
 //   Booked / Admitted in a cheaper room: (rate asked − rate given) × planned stay.
-//     The room given is "Category admitted to", or "Offerred Room" when that is blank.
+//     The room given is "Admission category", or "Offerred Room" when that is blank.
 function revenueLoss_(e, rates) {
   var rateOf = function (c) { return rates[String(c || '').trim().toLowerCase()]; };
   var stay = parseFloat(e.plannedStay) || 0;
