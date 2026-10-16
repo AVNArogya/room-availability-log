@@ -13,7 +13,6 @@
              'Website', 'Google Ad words', 'Referral', 'Walk-in'],
     doctor: ['Dr. Geethu', 'Dr. Sridevi', 'Dr. Chippi', 'Dr. Biju', 'Dr. Ramesh', 'Dr. Padmavathy', 'Dr. Jyothish'],
     roomCategory: ['Economy', 'Executive AC', 'Classic Villa'],
-    offeredInstead: ['Nothing available', 'Economy', 'Executive AC', 'Classic Villa', 'Outside stay (hotel)'],
     status: ['Waiting', 'No answer', 'Booked', 'Admitted', 'Postponed', 'Lost', 'Went elsewhere', 'Cancelled'],
     reasonNotAdmitted: ['Room not available', 'Waiting time too long', 'Cost', 'Postponed by patient',
                         'Went elsewhere', 'Not reachable', 'Other'],
@@ -154,7 +153,7 @@
       sel.innerHTML = html;
       if (cur) setSelect(sel, cur);
     });
-    ['source', 'doctor', 'offeredInstead', 'reasonNotAdmitted', 'enteredBy'].forEach(function (k) {
+    ['source', 'doctor', 'reasonNotAdmitted', 'enteredBy'].forEach(function (k) {
       $('#dl-' + k).innerHTML = (L[k] || []).map(function (o) { return '<option value="' + esc(o) + '">'; }).join('');
     });
     $('#statusFilter').innerHTML = '<option value="">All statuses</option>' +
