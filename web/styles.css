@@ -138,6 +138,20 @@ button.link { background: none; border: 0; color: var(--accent); font: inherit; 
 .list-tools { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
 .list-tools input { flex: 1 1 220px; }
 .list-tools select { flex: 0 1 180px; }
+#excelBtn { display: inline-flex; align-items: center; gap: 6px; }
+#excelBtn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+#excelBtn:disabled { opacity: .6; cursor: progress; }
+
+/* Sortable headers: ▲ ascending, ▼ descending, faint ↕ when not sorted. */
+.entries th .sort {
+  all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
+  font: inherit; color: inherit; text-transform: inherit; letter-spacing: inherit;
+}
+.entries th .sort::after { content: "↕"; opacity: .35; font-size: 11px; }
+.entries th[aria-sort="ascending"] .sort::after { content: "▲"; opacity: 1; }
+.entries th[aria-sort="descending"] .sort::after { content: "▼"; opacity: 1; }
+.entries th .sort:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.entries th.num .sort { flex-direction: row-reverse; }
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-bottom: 12px; }
 .stat { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; }
 .stat b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }

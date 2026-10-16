@@ -133,6 +133,10 @@
         <input type="search" id="search" placeholder="Search name, phone, UHID, city…">
         <select id="statusFilter"><option value="">All statuses</option></select>
         <button class="secondary" id="refreshBtn" type="button">Refresh</button>
+        <button class="secondary" id="excelBtn" type="button" title="Download the entries shown (all pages) as an Excel file">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14"/></svg>
+          Download Excel
+        </button>
       </div>
       <div class="stats" id="stats"></div>
       <div id="pending" class="pending" hidden></div>
@@ -140,9 +144,18 @@
         <table class="entries">
           <thead>
             <tr>
-              <th>Patient</th><th>Enquiry</th><th>Phone</th><th>Room asked</th><th>Offered room</th>
-              <th>Wanted</th><th class="num">Wait</th><th>Status</th><th class="num">Days lost</th>
-              <th class="num">Revenue lost</th><th>Entered by</th>
+              <!-- data-sort: entry field to sort by; data-type: how to compare it -->
+              <th data-sort="patientName"><button type="button" class="sort">Patient</button></th>
+              <th data-sort="enquiryDate" data-type="date"><button type="button" class="sort">Enquiry</button></th>
+              <th data-sort="phone"><button type="button" class="sort">Phone</button></th>
+              <th data-sort="categoryAsked"><button type="button" class="sort">Room asked</button></th>
+              <th data-sort="offeredRoom"><button type="button" class="sort">Offered room</button></th>
+              <th data-sort="dateWanted" data-type="date"><button type="button" class="sort">Wanted</button></th>
+              <th class="num" data-sort="waitDays" data-type="number"><button type="button" class="sort">Wait</button></th>
+              <th data-sort="status"><button type="button" class="sort">Status</button></th>
+              <th class="num" data-sort="patientDaysLost" data-type="number"><button type="button" class="sort">Days lost</button></th>
+              <th class="num" data-sort="revenueLost" data-type="number"><button type="button" class="sort">Revenue lost</button></th>
+              <th data-sort="enteredBy"><button type="button" class="sort">Entered by</button></th>
             </tr>
           </thead>
           <tbody id="entries"></tbody>
@@ -160,7 +173,7 @@
   <datalist id="dl-reasonNotAdmitted"></datalist>
   <datalist id="dl-enteredBy"></datalist>
 
-  <script src="config.js?v=10"></script>
-  <script src="app.js?v=10"></script>
+  <script src="config.js?v=11"></script>
+  <script src="app.js?v=11"></script>
 </body>
 </html>

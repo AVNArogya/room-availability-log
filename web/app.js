@@ -318,6 +318,8 @@
       return [e.patientName, e.phone, e.uhid, e.city, e.condition, e.doctor, e.categoryAsked]
         .join(' ').toLowerCase().indexOf(q) !== -1;
     });
+    sortRows(rows);
+    state.filtered = rows;
     var num = function (v) { return v === '' || v == null ? '—' : esc(v); };
     var pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
     state.page = Math.min(Math.max(1, state.page), pages);
@@ -343,6 +345,109 @@
     renderPager(rows.length, pages);
     renderStats(rows);
   }
+  /* ---------- sorting ---------- */
+  // state.sort = { key, type, dir: 1 | -1 }; no key keeps the sheet order (newest first).
+  // Blank values always go last, whichever direction.
+  function sortRows(rows) {
+    var s = state.sort;
+    if (!s || !s.key) return;
+    var val = function (e) {
+      var v = e[s.key];
+      if (v === '' || v == null) return null;
+      if (s.type === 'number') { v = Number(v); return isNaN(v) ? null : v; }
+      if (s.type === 'date') return String(v).slice(0, 10);
+      return String(v).toLowerCase();
+    };
+    rows.sort(function (a, b) {
+      var x = val(a), y = val(b);
+      if (x === null || y === null) return x === y ? 0 : (x === null ? 1 : -1);
+      if (s.type === 'number') return (x - y) * s.dir;
+      return x.localeCompare(y, 'en', { numeric: true }) * s.dir;
+    });
+  }
+  function renderSortHeaders() {
+    var s = state.sort || {};
+    $$('.entries th[data-sort]').forEach(function (th) {
+      var on = th.dataset.sort === s.key;
+      th.setAttribute('aria-sort', on ? (s.dir === 1 ? 'ascending' : 'descending') : 'none');
+    });
+  }
+  // Click once: ascending. Again: descending. Third time: back to sheet order.
+  $('.entries thead').addEventListener('click', function (ev) {
+    var th = ev.target.closest('th[data-sort]');
+    if (!th) return;
+    var s = state.sort || {};
+    if (s.key !== th.dataset.sort) state.sort = { key: th.dataset.sort, type: th.dataset.type || 'text', dir: 1 };
+    else if (s.dir === 1) state.sort = { key: s.key, type: s.type, dir: -1 };
+    else state.sort = null;
+    state.page = 1;
+    renderSortHeaders();
+    renderList();
+  });
+
+  /* ---------- Excel download ---------- */
+  var EXPORT_COLUMNS = [
+    ['enquiryDate', 'Enquiry date', 'date'], ['patientName', 'Patient name'], ['phone', 'Phone'],
+    ['uhid', 'UHID (if registered)'], ['newOrReturning', 'New / returning'], ['city', 'City / district'],
+    ['source', 'Source'], ['condition', 'Condition'], ['doctor', 'Advising doctor'],
+    ['plannedStay', 'Planned stay (days)', 'number'], ['categoryAsked', 'Room category asked for'],
+    ['offeredRoom', 'Offerred Room'], ['dateWanted', 'Date patient wanted', 'date'],
+    ['earliestDate', 'Earliest date we could give', 'date'], ['waitDays', 'Wait (days)', 'number'],
+    ['status', 'Status'], ['admissionDate', 'Admission date', 'date'], ['categoryAdmitted', 'Admission category'],
+    ['reasonNotAdmitted', 'Reason not admitted'], ['wentWhere', 'Where they went (if known)'],
+    ['lastFollowUp', 'Last follow-up', 'date'], ['remarks', 'Remarks'], ['enteredBy', 'Entered by'],
+    ['patientDaysLost', 'Patient-days lost', 'number'], ['revenueLost', 'Revenue lost (₹)', 'number'],
+    ['updatedAt', 'Updated at', 'datetime']
+  ];
+  var XLSX_SRC = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+  function loadXlsx() {
+    if (window.XLSX) return Promise.resolve(window.XLSX);
+    return new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = XLSX_SRC;
+      s.onload = function () { resolve(window.XLSX); };
+      s.onerror = function () { reject(new Error('Could not load the Excel library. Check the internet connection.')); };
+      document.head.appendChild(s);
+    });
+  }
+  function cellValue(v, type) {
+    if (v === '' || v == null) return '';
+    if (type === 'number') { var n = Number(v); return isNaN(n) ? String(v) : n; }
+    if (type === 'date' || type === 'datetime') {
+      var m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/);
+      if (m) return new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0));
+    }
+    return String(v);
+  }
+  // Exports every entry that matches the current search, filter and sort — all pages, not just this one.
+  function downloadExcel() {
+    var rows = state.filtered || [];
+    if (!rows.length) { toast('No entries to download'); return; }
+    var btn = $('#excelBtn'); btn.disabled = true;
+    loadXlsx().then(function (XLSX) {
+      var aoa = [EXPORT_COLUMNS.map(function (c) { return c[1]; })].concat(rows.map(function (e) {
+        return EXPORT_COLUMNS.map(function (c) { return cellValue(e[c[0]], c[2]); });
+      }));
+      var ws = XLSX.utils.aoa_to_sheet(aoa, { cellDates: true });
+      // Date formats and column widths.
+      EXPORT_COLUMNS.forEach(function (c, ci) {
+        var fmt = c[2] === 'date' ? 'dd-mmm-yyyy' : c[2] === 'datetime' ? 'dd-mmm-yyyy hh:mm' : c[0] === 'revenueLost' ? '#,##0' : null;
+        if (fmt) for (var r = 1; r < aoa.length; r++) {
+          var cell = ws[XLSX.utils.encode_cell({ r: r, c: ci })];
+          if (cell && cell.t !== 's') cell.z = fmt;
+        }
+      });
+      ws['!cols'] = EXPORT_COLUMNS.map(function (c) { return { wch: Math.max(12, Math.min(28, c[1].length + 2)) }; });
+      var wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Room availability log');
+      XLSX.writeFile(wb, 'room-availability-log-' + today() + '.xlsx');
+      toast('Downloaded ' + rows.length + ' entr' + (rows.length === 1 ? 'y' : 'ies'));
+    }).catch(function (err) {
+      toast(err.message);
+    }).then(function () { btn.disabled = false; });
+  }
+  $('#excelBtn').addEventListener('click', downloadExcel);
+
   // "Showing 11–20 of 57" plus Prev / page numbers / Next. Long ranges collapse to 1 … 4 5 6 … 12.
   function renderPager(total, pages) {
     var pager = $('#pager');
